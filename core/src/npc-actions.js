@@ -42,7 +42,33 @@ function buildFollowActionFromNpcCard({ actorId, npcId, skillKey = "Stealth" }) 
   };
 }
 
+function buildTalkStyleActionFromNpcCard({ actorId, npcId, style = "persuade", intent, skillKey, revealClueId }) {
+  const card = loadNpcCard(npcId);
+  const methodMap = {
+    persuade: { skillKey: "Persuade", riskLevel: "low", narrativeBonus: 1 },
+    charm: { skillKey: "Charm", riskLevel: "low", narrativeBonus: 0 },
+    intimidate: { skillKey: "Intimidate", riskLevel: "medium", narrativeBonus: 0 },
+    bribery: { skillKey: "Credit Rating", riskLevel: "medium", narrativeBonus: 0 }
+  };
+  const base = methodMap[style] || methodMap.persuade;
+
+  return {
+    kind: "talk",
+    actorId,
+    targetNpc: npcId,
+    intent: intent || `我想试着用${style}的方式撬开${card.name}的嘴`,
+    skillKey: skillKey || base.skillKey,
+    leverageScore: 1,
+    narrativeBonus: base.narrativeBonus,
+    riskLevel: base.riskLevel,
+    impactScore: style === "intimidate" ? 2 : 1,
+    revealClueId,
+    interactionStyle: style
+  };
+}
+
 module.exports = {
   buildStealActionFromNpcCard,
-  buildFollowActionFromNpcCard
+  buildFollowActionFromNpcCard,
+  buildTalkStyleActionFromNpcCard
 };

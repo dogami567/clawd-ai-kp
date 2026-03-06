@@ -138,6 +138,9 @@ function buildPostRollLine(action, event) {
 function buildNarrativeLine(action, event) {
   if (!event?.outcome?.narrative) return null;
   if (["talk", "steal", "follow"].includes(action.kind) && event.contentEffects?.intelLine) {
+    if (event.contentEffects.aftermathLine) {
+      return `${event.contentEffects.intelLine} ${event.contentEffects.aftermathLine}`;
+    }
     return event.contentEffects.intelLine;
   }
   if (action.kind === "use_item" && event.contentEffects?.revealedClues?.length) {

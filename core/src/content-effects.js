@@ -39,6 +39,10 @@ function removeNpcItem(sessionState, npcId, itemName) {
   return true;
 }
 
+function findNpc(sessionState, npcId) {
+  return (sessionState.scene.participants.npcs || []).find((item) => item.id === npcId || item.name === npcId) || null;
+}
+
 function applyContentEffects(sessionState, action, success, successLevel) {
   const effects = {
     revealedClues: [],
@@ -63,12 +67,16 @@ function applyContentEffects(sessionState, action, success, successLevel) {
   }
 
   if (action.kind === "steal" && action.targetNpc && action.targetItem) {
+    const npc = findNpc(sessionState, action.targetNpc);
     effects.intelLine = success
       ? `你手指一勾，${action.targetItem} 还真让你带出来了。`
       : `你这一下没偷利索，${action.targetNpc} 像是已经觉出点不对。`;
     if (success) {
       effects.stolenItem = action.targetItem;
       removeNpcItem(sessionState, action.targetNpc, action.targetItem);
+      effects.aftermathLine = npc && action.targetItem === "钥匙串"
+        ? `${npc.name} 过不了多久就会下意识去摸口袋。等他发现钥匙没了，人会立刻绷起来。`
+        : null;
     }
   }
 
