@@ -74,8 +74,12 @@ function testDelayedStealConsequences() {
 
   const advanced = submitAction(session, { kind: "advance_time", minutes: 5 });
   assert.equal(advanced.triggered.length, 1);
-  assert.equal(session.scene.timeState.countdowns.length, 0);
+  assert.equal(advanced.triggered[0].effect, "steal_discovery");
+  assert.equal(session.scene.timeState.countdowns.length, 1);
   assert.equal(session.scene.threats.exposure >= 2, true);
+
+  const followup = submitAction(session, { kind: "advance_time", minutes: 5 });
+  assert.equal(followup.triggered.some((item) => item.effect === "search_sweep"), true);
 }
 
 function testDelayedFollowAlert() {
@@ -101,7 +105,13 @@ function testDelayedFollowAlert() {
 
   const advanced = submitAction(session, { kind: "advance_time", minutes: 8 });
   assert.equal(advanced.triggered.length, 1);
+  assert.equal(advanced.triggered[0].effect, "follow_alert");
   assert.equal(session.scene.participants.npcs[0].attitude, "guarded");
+  assert.equal(session.scene.timeState.countdowns.length >= 2, true);
+
+  const escalated = submitAction(session, { kind: "advance_time", minutes: 6 });
+  assert.equal(escalated.triggered.some((item) => item.effect === "route_shift"), true);
+  assert.equal(escalated.triggered.some((item) => item.effect === "reinforcements_arrive"), true);
 }
 
 function run() {

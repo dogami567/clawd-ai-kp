@@ -39,8 +39,9 @@ function runNpcActionDemo() {
   const afterSteal = submitAction(session, { kind: "advance_time", minutes: 5 });
   const follow = submitAction(session, buildFollowActionFromNpcCard({ actorId: investigator.id, npcId: "gravedigger" }), random);
   const afterFollow = submitAction(session, { kind: "advance_time", minutes: 8 });
+  const afterEscalation = submitAction(session, { kind: "advance_time", minutes: 6 });
 
-  return { steal, afterSteal, follow, afterFollow, state: getState(session) };
+  return { steal, afterSteal, follow, afterFollow, afterEscalation, state: getState(session) };
 }
 
 if (require.main === module) {

@@ -67,11 +67,20 @@ function appendTriggeredEvent(sessionState, label, extra = {}) {
   });
 }
 
+function appendCountdown(sessionState, countdown) {
+  const countdowns = ensureCountdownList(sessionState);
+  countdowns.push({
+    key: countdown.key || `countdown-${Date.now()}-${countdowns.length + 1}`,
+    ...countdown
+  });
+}
+
 function applyCountdownEffect(sessionState, countdown) {
   const npc = countdown.targetNpc ? findNpc(sessionState, countdown.targetNpc) : null;
 
   if (countdown.effect === "steal_discovery") {
     sessionState.scene.threats.exposure = Math.min(10, sessionState.scene.threats.exposure + 2);
+    sessionState.scene.threats.pressure = Math.min(10, sessionState.scene.threats.pressure + 1);
     if (npc) {
       npc.trust = Math.max(-5, Number(npc.trust || 0) - 2);
       npc.attitude = npc.trust <= -2 ? "hostile" : "guarded";
@@ -81,6 +90,17 @@ function applyCountdownEffect(sessionState, countdown) {
       if (!npc.socialState.flags.includes("theft_discovered")) npc.socialState.flags.push("theft_discovered");
     }
     appendTriggeredEvent(sessionState, countdown.label || `${countdown.targetNpc} 发现东西丢了，现场警觉明显上升。`);
+    if (countdown.targetNpc) {
+      appendCountdown(sessionState, {
+        key: `search-sweep-${countdown.targetNpc}-${Date.now()}`,
+        label: `${countdown.targetNpc} 开始回想刚刚靠近过自己的人，并在周围搜一圈。`,
+        remaining: countdown.followupDelayMinutes ?? 5,
+        unit: "minute",
+        effect: "search_sweep",
+        targetNpc: countdown.targetNpc,
+        sourceCountdown: countdown.key
+      });
+    }
   }
 
   if (countdown.effect === "follow_alert") {
@@ -94,6 +114,26 @@ function applyCountdownEffect(sessionState, countdown) {
       if (!npc.socialState.flags.includes("changes_route")) npc.socialState.flags.push("changes_route");
     }
     appendTriggeredEvent(sessionState, countdown.label || `${countdown.targetNpc} 开始疑神疑鬼，临时改了路线。`);
+    appendCountdown(sessionState, {
+      key: `route-shift-${countdown.targetNpc || "npc"}-${Date.now()}`,
+      label: `${countdown.targetNpc} 为了甩尾，又拐进了另一段路线。`,
+      remaining: countdown.routeShiftDelayMinutes ?? 4,
+      unit: "minute",
+      effect: "route_shift",
+      targetNpc: countdown.targetNpc,
+      routeHint: countdown.routeHint || "对方开始故意绕路"
+    });
+    if (countdown.escalateToReinforcements) {
+      appendCountdown(sessionState, {
+        key: `reinforcements-${countdown.targetNpc || "npc"}-${Date.now()}`,
+        label: countdown.reinforcementLabel || "附近有人被悄悄招呼过来，局面开始变硬。",
+        remaining: countdown.reinforcementDelayMinutes ?? 6,
+        unit: "minute",
+        effect: "reinforcements_arrive",
+        targetNpc: countdown.targetNpc,
+        amount: countdown.reinforcementAmount || 1
+      });
+    }
   }
 
   if (countdown.effect === "route_shift") {
@@ -101,6 +141,36 @@ function applyCountdownEffect(sessionState, countdown) {
     appendTriggeredEvent(sessionState, countdown.label || `${countdown.targetNpc} 按既定节奏转进下一段路线。`, {
       routeHint: countdown.routeHint || null
     });
+  }
+
+  if (countdown.effect === "search_sweep") {
+    sessionState.scene.threats.exposure = Math.min(10, sessionState.scene.threats.exposure + 1);
+    sessionState.scene.threats.pressure = Math.min(10, sessionState.scene.threats.pressure + 1);
+    if (npc) {
+      npc.socialState = npc.socialState || { suspicion: 0, fear: 0, affinity: 0, obligation: 0, flags: [] };
+      npc.socialState.suspicion = Math.min(5, Number(npc.socialState.suspicion || 0) + 1);
+      npc.socialState.flags = Array.isArray(npc.socialState.flags) ? npc.socialState.flags : [];
+      if (!npc.socialState.flags.includes("searching_area")) npc.socialState.flags.push("searching_area");
+    }
+    appendTriggeredEvent(sessionState, countdown.label || `${countdown.targetNpc} 开始在附近找人和查漏补缺。`);
+  }
+
+  if (countdown.effect === "reinforcements_arrive") {
+    const amount = Number(countdown.amount || 1);
+    sessionState.scene.threats.pressure = Math.min(10, sessionState.scene.threats.pressure + amount + 1);
+    sessionState.scene.threats.exposure = Math.min(10, sessionState.scene.threats.exposure + 1);
+    appendTriggeredEvent(sessionState, countdown.label || "又有人赶到了现场，局面肉眼可见地紧起来。", {
+      reinforcements: amount,
+      sourceNpc: countdown.targetNpc || null
+    });
+  }
+
+  if (countdown.effect === "opportunity_close") {
+    appendTriggeredEvent(sessionState, countdown.label || "原本那扇还开着的窗口，现在已经慢慢合上了。", {
+      closedOption: countdown.optionId || null,
+      clueId: countdown.clueId || null
+    });
+    sessionState.scene.nextOptions = (sessionState.scene.nextOptions || []).filter((item) => item.id !== countdown.optionId);
   }
 
   updateDangerLevel(sessionState.scene);

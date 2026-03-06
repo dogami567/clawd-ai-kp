@@ -246,7 +246,8 @@ function buildStateChanges(action, adjudication, success) {
           unit: "minute",
           effect: "steal_discovery",
           targetNpc: action.targetNpc,
-          targetItem: action.targetItem
+          targetItem: action.targetItem,
+          followupDelayMinutes: action.searchSweepDelayMinutes ?? 5
         }
       });
     } else {
@@ -301,7 +302,11 @@ function buildStateChanges(action, adjudication, success) {
             remaining: action.followAlertDelayMinutes ?? 8,
             unit: "minute",
             effect: "follow_alert",
-            targetNpc: action.targetNpc
+            targetNpc: action.targetNpc,
+            routeShiftDelayMinutes: action.routeShiftDelayMinutes ?? 4,
+            escalateToReinforcements: action.escalateToReinforcements ?? true,
+            reinforcementDelayMinutes: action.reinforcementDelayMinutes ?? 6,
+            reinforcementAmount: action.reinforcementAmount ?? 1
           }
         });
       }
