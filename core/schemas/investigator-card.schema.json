@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clawd-ai-kp.local/schemas/investigator-card.schema.json",
+  "title": "InvestigatorCard",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "name",
+    "age",
+    "occupation",
+    "persona",
+    "attributes",
+    "skills",
+    "resources",
+    "inventory",
+    "status"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "age": { "type": "integer", "minimum": 10, "maximum": 120 },
+    "occupation": { "type": "string", "minLength": 1 },
+    "persona": { "type": "string", "minLength": 1 },
+    "attributes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["STR", "CON", "DEX", "APP", "POW", "INT", "SIZ", "EDU"],
+      "properties": {
+        "STR": { "type": "integer", "minimum": 1, "maximum": 99 },
+        "CON": { "type": "integer", "minimum": 1, "maximum": 99 },
+        "DEX": { "type": "integer", "minimum": 1, "maximum": 99 },
+        "APP": { "type": "integer", "minimum": 1, "maximum": 99 },
+        "POW": { "type": "integer", "minimum": 1, "maximum": 99 },
+        "INT": { "type": "integer", "minimum": 1, "maximum": 99 },
+        "SIZ": { "type": "integer", "minimum": 1, "maximum": 99 },
+        "EDU": { "type": "integer", "minimum": 1, "maximum": 99 }
+      }
+    },
+    "skills": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "value"],
+        "properties": {
+          "key": { "type": "string", "minLength": 1 },
+          "value": { "type": "integer", "minimum": 0, "maximum": 99 },
+          "tag": { "type": "string", "enum": ["investigation", "social", "action", "other"] }
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hp", "hpMax", "san", "sanMax", "luck"],
+      "properties": {
+        "hp": { "type": "integer", "minimum": 0 },
+        "hpMax": { "type": "integer", "minimum": 1 },
+        "san": { "type": "integer", "minimum": 0, "maximum": 99 },
+        "sanMax": { "type": "integer", "minimum": 1, "maximum": 99 },
+        "luck": { "type": "integer", "minimum": 0, "maximum": 99 }
+      }
+    },
+    "inventory": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "category"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "category": { "type": "string", "enum": ["daily", "powerful", "tool", "weapon", "other"] },
+          "quantity": { "type": "integer", "minimum": 1, "default": 1 },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conditions"],
+      "properties": {
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["normal", "injured", "critical", "panic", "temporary_insanity", "unconscious"]
+          }
+        },
+        "temporaryEffects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "expiresAtRound"],
+            "properties": {
+              "label": { "type": "string", "minLength": 1 },
+              "expiresAtRound": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "era": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

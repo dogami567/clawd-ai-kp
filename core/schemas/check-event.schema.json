@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clawd-ai-kp.local/schemas/check-event.schema.json",
+  "title": "CheckEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "sessionId",
+    "actorId",
+    "checkType",
+    "skillKey",
+    "targetValue",
+    "roll",
+    "result",
+    "outcome",
+    "timestamp"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "sceneId": { "type": "string", "minLength": 1 },
+    "actorId": { "type": "string", "minLength": 1 },
+    "targetId": { "type": "string" },
+    "checkType": { "type": "string", "enum": ["normal", "opposed", "san", "combat", "adjudication"] },
+    "mode": { "type": "string", "enum": ["open", "hidden"] },
+    "skillKey": { "type": "string", "minLength": 1 },
+    "difficulty": { "type": "string", "enum": ["regular", "hard", "extreme"] },
+    "targetValue": { "type": "integer", "minimum": 0, "maximum": 99 },
+    "roll": { "type": "integer", "minimum": 1, "maximum": 100 },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["success", "successLevel"],
+      "properties": {
+        "success": { "type": "boolean" },
+        "successLevel": { "type": "string", "enum": ["fail", "regular", "hard", "extreme", "critical", "fumble"] },
+        "margin": { "type": "integer" }
+      }
+    },
+    "opposed": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "opponentRoll": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "opponentLevel": { "type": "string", "enum": ["fail", "regular", "hard", "extreme", "critical", "fumble"] },
+        "winner": { "type": "string", "enum": ["actor", "opponent", "draw"] }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["narrative", "cost", "stateChanges"],
+      "properties": {
+        "narrative": { "type": "string", "minLength": 1 },
+        "cost": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "value"],
+            "properties": {
+              "kind": { "type": "string", "enum": ["time", "resource", "exposure", "relationship", "misinfo", "hp", "san", "other"] },
+              "value": { "type": ["integer", "number", "string"] },
+              "note": { "type": "string" }
+            }
+          }
+        },
+        "stateChanges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "op"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "op": { "type": "string", "enum": ["set", "inc", "dec", "append", "remove"] },
+              "value": {}
+            }
+          }
+        },
+        "nextPrompt": { "type": "string" }
+      }
+    },
+    "adjudication": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "intent": { "type": "string" },
+        "basis": { "type": "array", "items": { "type": "string" } },
+        "impact": { "type": "string", "enum": ["small", "medium", "large"] },
+        "duration": { "type": "string", "enum": ["instant", "1_round", "multi_round", "scene"] },
+        "balanceNote": { "type": "string" }
+      }
+    },
+    "timestamp": { "type": "string", "format": "date-time" }
+  }
+}

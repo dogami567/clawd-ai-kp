@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clawd-ai-kp.local/schemas/scene-state.schema.json",
+  "title": "SceneState",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sessionId",
+    "sceneId",
+    "sceneType",
+    "timeState",
+    "participants",
+    "clues",
+    "events",
+    "threats",
+    "nextOptions"
+  ],
+  "properties": {
+    "sessionId": { "type": "string", "minLength": 1 },
+    "sceneId": { "type": "string", "minLength": 1 },
+    "sceneType": { "type": "string", "enum": ["intro", "investigation", "social", "combat", "transition", "settlement"] },
+    "summary": { "type": "string" },
+    "location": { "type": "string" },
+    "timeState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timelineMinute", "combatRound", "countdowns"],
+      "properties": {
+        "timelineMinute": { "type": "integer", "minimum": 0 },
+        "combatRound": { "type": "integer", "minimum": 0 },
+        "countdowns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "remaining", "unit"],
+            "properties": {
+              "key": { "type": "string", "minLength": 1 },
+              "remaining": { "type": "integer", "minimum": 0 },
+              "unit": { "type": "string", "enum": ["round", "minute", "scene"] }
+            }
+          }
+        }
+      }
+    },
+    "participants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["investigators", "npcs"],
+      "properties": {
+        "investigators": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "npcs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "attitude", "status"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "name": { "type": "string", "minLength": 1 },
+              "attitude": { "type": "string", "enum": ["friendly", "neutral", "hostile", "unknown"] },
+              "status": { "type": "string", "enum": ["active", "down", "escaped", "arriving"] },
+              "arrivalRound": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    "clues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "kind", "revealed"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "enum": ["core", "optional"] },
+          "revealed": { "type": "boolean" },
+          "source": { "type": "string" }
+        }
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "triggered"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "label": { "type": "string", "minLength": 1 },
+          "triggered": { "type": "boolean" },
+          "triggerAtMinute": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "threats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exposure", "pressure", "dangerLevel"],
+      "properties": {
+        "exposure": { "type": "integer", "minimum": 0, "maximum": 10 },
+        "pressure": { "type": "integer", "minimum": 0, "maximum": 10 },
+        "dangerLevel": { "type": "string", "enum": ["low", "medium", "high", "extreme"] }
+      }
+    },
+    "nextOptions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "type"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "label": { "type": "string", "minLength": 1 },
+          "type": { "type": "string", "enum": ["investigate", "talk", "move", "fight", "fallback", "other"] },
+          "requires": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}
