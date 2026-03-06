@@ -112,7 +112,7 @@ function runDemo() {
       defendSkill: "Dodge",
       defendValue: target.skills.find((item) => item.key === "Dodge").value,
       defenseMode: "dodge",
-      baseDamage: "1D6+1",
+      weaponKey: "club",
       damageBonusText: investigator.resources.damageBonusText
     },
     random

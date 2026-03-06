@@ -73,7 +73,7 @@ function runApiDemo() {
     defendSkill: "Dodge",
     defendValue: 40,
     defenseMode: "fight_back",
-    baseDamage: "1D4+1",
+    weaponKey: "knife",
     damageBonusText: investigator.resources.damageBonusText,
     counterBaseDamage: "1D3"
   }, random);
