@@ -33,16 +33,16 @@ function buildBasis(action, actor) {
 
 function buildNextPrompt(actionKind, success, riskLevel) {
   if (success) {
-    if (actionKind === "explore") return "你发现了新的可调查细节，准备继续深挖还是先整理线索？";
-    if (actionKind === "talk") return "对方开始松口了，你要追问核心问题还是先稳住关系？";
-    if (actionKind === "use_item") return "道具发挥了作用，你要立刻推进还是先观察反馈？";
-    return "局面出现变化了，你下一步准备怎么做？";
+    if (actionKind === "explore") return "你现在已经摸到一层皮了。还要继续往里抠，还是先把这点东西记稳？";
+    if (actionKind === "talk") return "他嘴已经松了一点。你要趁热追一句，还是先顺着哄下去？";
+    if (actionKind === "use_item") return "东西已经派上用场了。你要立刻顺着它往下追，还是先看看还有没有别的呼应？";
+    return "这一下算是有回音了。你下一手准备往哪边伸？";
   }
 
   if (riskLevel === "high" || riskLevel === "extreme") {
-    return "局面开始变危险了，你要硬着头皮继续，还是先收手调整？";
+    return "事情已经开始有点拧巴了。你还要硬顶，还是先缩半步看看？";
   }
-  return "虽然没完全如愿，但局势还在推进，你要顺势补救还是换个思路？";
+  return "这下没全照你想的来，但线头还在。你要接着抻，还是换个手法？";
 }
 
 function adjudicateAction(sessionState, actor, action) {

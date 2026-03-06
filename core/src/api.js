@@ -111,9 +111,9 @@ function buildAdjudicationResponse(sessionState, actor, action, randomInt) {
 
 function buildOutcomePrompt(action, success, adjudication) {
   if (success) {
-    return action.onSuccessPrompt || `行动成功了，${adjudication.intent} 取得了阶段性效果。`;
+    return action.onSuccessPrompt || `这一下成了，${adjudication.intent} 已经开始起作用了。`;
   }
-  return action.onFailPrompt || `行动没完全按计划进行，但剧情仍在推进，代价类型：${adjudication.failForward}。`;
+  return action.onFailPrompt || `这一下没全照你想的来，不过事情已经往前拱了一点，代价落在 ${adjudication.failForward} 这边。`;
 }
 
 function submitAction(sessionState, action, randomInt) {
