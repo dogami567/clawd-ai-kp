@@ -80,8 +80,9 @@ function runSceneDemo() {
     narrativeBonus: 1,
     riskLevel: "low",
     impactScore: 1,
-    mode: "open",
-    onFailPrompt: "他没把你彻底顶回去，但也明显开始防你了。只是临走前，他还是从牙缝里漏出一句：‘钟楼……昨晚钟楼那边有人。’"
+    revealClueId: "clue-wall-symbol",
+    topicHint: "昨晚钟楼那边有人，而且声音不是正常的钟声",
+    mode: "open"
   }, random);
 
   const step3 = submitAction(session, {
@@ -95,6 +96,8 @@ function runSceneDemo() {
     riskLevel: "medium",
     impactScore: 1,
     duration: "scene",
+    revealClueId: "clue-wall-symbol",
+    revealQuality: "clear",
     clueTitle: "重描后的旧符号轮廓",
     clueKind: "partial",
     clueQuality: "partial",

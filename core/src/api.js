@@ -18,6 +18,7 @@ const {
   buildNarrativeLine
 } = require("./voice-lines");
 const { applyStateChanges, buildStateChanges } = require("./state-effects");
+const { applyContentEffects } = require("./content-effects");
 
 function createCharacter(input) {
   return createInvestigatorFromQuickFire(input);
@@ -100,7 +101,8 @@ function buildAdjudicationResponse(sessionState, actor, action, randomInt) {
   };
   event.outcome.stateChanges = buildStateChanges(action, adjudication, event.result.success);
   applyStateChanges(sessionState, event.outcome.stateChanges);
-  event.outcome.nextPrompt = buildOutcomePrompt(action, event.result.success, adjudication);
+  event.contentEffects = applyContentEffects(sessionState, action, event.result.success);
+  event.outcome.nextPrompt = buildOutcomePrompt(action, event.result.success, adjudication, event.contentEffects);
 
   return {
     kind: action.kind,
@@ -114,7 +116,13 @@ function buildAdjudicationResponse(sessionState, actor, action, randomInt) {
   };
 }
 
-function buildOutcomePrompt(action, success, adjudication) {
+function buildOutcomePrompt(action, success, adjudication, contentEffects = {}) {
+  if (action.kind === "talk" && contentEffects.intelLine) {
+    return contentEffects.intelLine;
+  }
+  if (action.kind === "use_item" && contentEffects.revealedClues?.length) {
+    return action.onSuccessPrompt || `你手上的东西还真把一层旧痕给撬开了。`;
+  }
   if (success) {
     return action.onSuccessPrompt || `这一下成了，${adjudication.intent} 已经开始起作用了。`;
   }

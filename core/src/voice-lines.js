@@ -121,6 +121,12 @@ function buildPostRollLine(action, event) {
 
 function buildNarrativeLine(action, event) {
   if (!event?.outcome?.narrative) return null;
+  if (action.kind === "talk" && event.contentEffects?.intelLine) {
+    return event.contentEffects.intelLine;
+  }
+  if (action.kind === "use_item" && event.contentEffects?.revealedClues?.length) {
+    return action.onSuccessPrompt || `你手上的东西还真把一层旧痕给撬开了。`;
+  }
   if (action.kind === "risky_action" && !event.result.success) {
     return action.onFailPrompt || "东西你是碰到了，但动静也一起放出去了，后面要开始变脸了。";
   }
