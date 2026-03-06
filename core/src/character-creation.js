@@ -189,7 +189,7 @@ function validateCreditRating(creditRating, occupation) {
 }
 
 function createInvestigatorRecord(input, occupation, baseAttributes, creationMethod) {
-  const resources = calculateDerivedStats(baseAttributes);
+  const resources = calculateDerivedStats(baseAttributes, { age: input.age });
   const validation = validateInventoryForEra(input.inventory || [], input.era);
   const allowance = buildConditionalAllowance(validation);
   const creditRating = validateCreditRating(input.creditRating ?? occupation.creditRatingRange?.[0] ?? 0, occupation);

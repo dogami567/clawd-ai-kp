@@ -138,3 +138,15 @@ module.exports = { run };
   assert.equal(dodge.baseValue, Math.floor(character.attributes.DEX / 2));
   assert.equal(ownLanguage.baseValue, character.attributes.EDU);
 })();
+
+
+(function appliesAgeBasedMovePenalties() {
+  const middleAged = buildCharacter({ age: 52, occupationKey: 'detective' });
+  const elder = buildCharacter({ age: 68, occupationKey: 'professor' });
+  const young = buildCharacter({ age: 18, occupationKey: 'journalist' });
+
+  assert.equal(middleAged.resources.baseMoveRate - middleAged.resources.moveRate, 2);
+  assert.equal(elder.resources.baseMoveRate - elder.resources.moveRate, 3);
+  assert.equal(young.resources.ageAdjustments.luckRerolls, 1);
+  assert.ok(middleAged.resources.ageAdjustments.eduImprovementChecks >= 2);
+})();
