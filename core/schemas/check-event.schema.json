@@ -74,8 +74,10 @@
             "required": ["path", "op"],
             "properties": {
               "path": { "type": "string", "minLength": 1 },
-              "op": { "type": "string", "enum": ["set", "inc", "dec", "append", "remove"] },
-              "value": {}
+              "op": { "type": "string", "enum": ["set", "inc", "dec", "append", "remove", "shift"] },
+              "value": {},
+              "npcId": { "type": "string" },
+              "field": { "type": "string" }
             }
           }
         },

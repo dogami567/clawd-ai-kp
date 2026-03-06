@@ -138,7 +138,7 @@ function buildPostRollLine(action, event) {
 function buildNarrativeLine(action, event) {
   if (!event?.outcome?.narrative) return null;
   if (["talk", "steal", "follow"].includes(action.kind) && event.contentEffects?.intelLine) {
-    if (event.contentEffects.aftermathLine) {
+    if (event.contentEffects.aftermathLine && !event.contentEffects.intelLine.includes(event.contentEffects.aftermathLine)) {
       return `${event.contentEffects.intelLine} ${event.contentEffects.aftermathLine}`;
     }
     return event.contentEffects.intelLine;

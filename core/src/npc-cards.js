@@ -17,8 +17,23 @@ function mapSkillToMethod(skillKey = "") {
   if (lower.includes("persuade")) return "persuade";
   if (lower.includes("charm")) return "charm";
   if (lower.includes("intimidate")) return "intimidate";
+  if (lower.includes("credit rating")) return "bribery";
+  if (lower.includes("fast talk")) return "charm";
   if (lower.includes("psychology")) return "empathy";
   return "persuade";
+}
+
+function methodResponseProfile(card, method) {
+  const strength = card.social?.respondsTo?.[method] || "normal";
+  const modifier = responseStrengthToModifier(strength);
+
+  return {
+    method,
+    strength,
+    modifier,
+    softSpots: card.social?.softSpots || [],
+    resentments: card.social?.resentments || []
+  };
 }
 
 function pickKnowledgeByOutcome(card, skillKey, successLevel, success) {
@@ -38,5 +53,6 @@ module.exports = {
   loadNpcCard,
   responseStrengthToModifier,
   mapSkillToMethod,
-  pickKnowledgeByOutcome
+  pickKnowledgeByOutcome,
+  methodResponseProfile
 };

@@ -64,7 +64,19 @@
               "attitude": { "type": "string", "enum": ["friendly", "neutral", "guarded", "hostile", "unknown"] },
               "status": { "type": "string", "enum": ["active", "down", "escaped", "arriving"] },
               "arrivalRound": { "type": "integer", "minimum": 0 },
-              "trust": { "type": "integer", "minimum": -5, "maximum": 5 }
+              "trust": { "type": "integer", "minimum": -5, "maximum": 5 },
+              "socialState": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "suspicion": { "type": "integer", "minimum": 0, "maximum": 5 },
+                  "fear": { "type": "integer", "minimum": 0, "maximum": 5 },
+                  "affinity": { "type": "integer", "minimum": 0, "maximum": 5 },
+                  "obligation": { "type": "integer", "minimum": 0, "maximum": 5 },
+                  "lastInteractionStyle": { "type": "string", "enum": ["persuade", "charm", "intimidate", "bribery"] },
+                  "flags": { "type": "array", "items": { "type": "string" } }
+                }
+              }
             }
           }
         }
