@@ -6,8 +6,10 @@ const {
   startCombat,
   resolveCombatRound,
   runSanCheck,
-  settleSession
-} = require("./state-machine");
+  settleSession,
+  createInvestigatorFromQuickFire,
+  listOccupationTemplates
+} = require("./index");
 
 function scriptedRandom(values) {
   let index = 0;
@@ -20,42 +22,59 @@ function scriptedRandom(values) {
   };
 }
 
-function runDemo() {
-  const session = createSession({ sessionId: "demo-coc7-v01", investigatorIds: [] });
-
-  registerInvestigator(session, {
+function buildDemoInvestigator() {
+  return createInvestigatorFromQuickFire({
     id: "pc-001",
     name: "林默",
     age: 27,
-    occupation: "记者",
+    occupationKey: "journalist",
     persona: "好奇心强，遇事先记录再行动",
-    attributes: { STR: 45, CON: 60, DEX: 55, APP: 60, POW: 50, INT: 70, SIZ: 50, EDU: 65 },
+    motivation: "想查清病院旧案真相",
+    era: "depression_era_1920s",
+    luck: 45,
+    attributeAssignments: {
+      STR: 50,
+      CON: 60,
+      DEX: 60,
+      APP: 50,
+      POW: 70,
+      INT: 80,
+      SIZ: 40,
+      EDU: 50
+    },
     skills: [
       { key: "Spot Hidden", value: 60, tag: "investigation" },
       { key: "Persuade", value: 55, tag: "social" },
-      { key: "Fighting", value: 50, tag: "action" }
+      { key: "Fighting", value: 50, tag: "action" },
+      { key: "Dodge", value: 40, tag: "action" }
     ],
-    resources: { hp: 11, hpMax: 11, san: 60, sanMax: 99, luck: 45 },
     inventory: [
       { name: "笔记本", category: "tool", quantity: 1 },
-      { name: "手电", category: "tool", quantity: 1 }
-    ],
-    status: { conditions: ["normal"], temporaryEffects: [] }
+      { name: "手电", category: "tool", quantity: 1 },
+      { name: "智能手机", category: "tool", quantity: 1 }
+    ]
   });
+}
 
+function runDemo() {
+  const session = createSession({ sessionId: "demo-coc7-v01", investigatorIds: [] });
+  const occupations = listOccupationTemplates();
+  const investigator = buildDemoInvestigator();
+
+  registerInvestigator(session, investigator);
   startInvestigationScene(session, { summary: "进入废弃病院调查", location: "静海路病院" });
 
   const random = scriptedRandom([73, 22, 87, 41]);
 
   const check1 = performSkillCheck(
     session,
-    { actorId: "pc-001", skillKey: "Spot Hidden", mode: "hidden", failForward: "exposure" },
+    { actorId: investigator.id, skillKey: "Spot Hidden", mode: "hidden", failForward: "exposure" },
     random
   );
 
   const check2 = performSkillCheck(
     session,
-    { actorId: "pc-001", skillKey: "Persuade", mode: "open", failForward: "time" },
+    { actorId: investigator.id, skillKey: "Persuade", mode: "open", failForward: "time" },
     random
   );
 
@@ -66,26 +85,36 @@ function runDemo() {
   const combat = resolveCombatRound(
     session,
     {
-      actorId: "pc-001",
+      actorId: investigator.id,
       attackSkill: "Fighting",
-      attackValue: 50,
+      attackValue: investigator.skills.find((item) => item.key === "Fighting").value,
       defendSkill: "Dodge",
       defendValue: 40,
       baseDamage: 3,
-      damageBonus: 1
+      damageBonus: 0
     },
     random
   );
 
   const san = runSanCheck(
     session,
-    { actorId: "pc-001", mode: "hidden", onSuccessLoss: 1, onFailLoss: 4 },
+    { actorId: investigator.id, mode: "hidden", onSuccessLoss: 1, onFailLoss: 4 },
     random
   );
 
   const settlement = settleSession(session);
 
   return {
+    occupations: occupations.map((item) => ({ key: item.key, name: item.name, formula: item.occupationSkillFormula })),
+    investigatorPreview: {
+      id: investigator.id,
+      name: investigator.name,
+      occupation: investigator.occupation,
+      attributes: investigator.attributes,
+      derived: investigator.resources,
+      inventoryValidation: investigator.inventoryValidation,
+      inventoryAllowance: investigator.inventoryAllowance
+    },
     checks: [check1, check2],
     combat,
     san,

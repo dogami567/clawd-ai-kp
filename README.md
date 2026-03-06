@@ -42,7 +42,14 @@ cd /home/node/clawd/clawd-ai-kp
 node core/src/demo.js
 ```
 
+当前 demo 已覆盖：
+- Quick-Fire 车卡
+- 职业模板读取
+- 派生属性计算（HP / MP / SAN / Build / Damage Bonus / MOV）
+- 物品时代校验与条件化许可
+- 检定 -> fail-forward -> 战斗一轮 -> SAN -> 结团
+
 ## 下一步
-1. 把 `core/src` 封装成命令式 API（开团/入团/检定/状态/结团）
+1. 把 `core/src` 封装成命令式 API（开团/入团/行动/检定/状态/结团）
 2. 接 OneBot 指令路由（先打通单群单会话）
 3. 增加 JSON Schema 校验与落盘存档
