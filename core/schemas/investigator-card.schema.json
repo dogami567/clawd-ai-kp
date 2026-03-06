@@ -16,6 +16,7 @@
     "inventory",
     "status",
     "identity",
+    "skillAllocation",
     "finance",
     "backstory"
   ],
@@ -61,6 +62,9 @@
         "properties": {
           "key": { "type": "string", "minLength": 1 },
           "value": { "type": "integer", "minimum": 0, "maximum": 99 },
+          "baseValue": { "type": "integer", "minimum": 0, "maximum": 99 },
+          "occupationPointsSpent": { "type": "integer", "minimum": 0 },
+          "interestPointsSpent": { "type": "integer", "minimum": 0 },
           "tag": { "type": "string", "enum": ["investigation", "social", "action", "other"] }
         }
       }
@@ -94,6 +98,20 @@
           "quantity": { "type": "integer", "minimum": 1, "default": 1 },
           "notes": { "type": "string" }
         }
+      }
+    },
+    "skillAllocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["occupationSpent", "occupationBudget", "interestSpent", "interestBudget", "valid"],
+      "properties": {
+        "occupationSpent": { "type": "integer", "minimum": 0 },
+        "occupationBudget": { "type": "integer", "minimum": 0 },
+        "interestSpent": { "type": "integer", "minimum": 0 },
+        "interestBudget": { "type": "integer", "minimum": 0 },
+        "trackedSkills": { "type": "integer", "minimum": 0 },
+        "untrackedSkills": { "type": "integer", "minimum": 0 },
+        "valid": { "type": "boolean" }
       }
     },
     "finance": {

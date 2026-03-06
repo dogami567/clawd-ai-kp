@@ -28,6 +28,7 @@ function buildDemoInvestigator() {
     name: "林默",
     age: 27,
     occupationKey: "journalist",
+    creditRating: 20,
     persona: "好奇心强，遇事先记录再行动",
     motivation: "想查清病院旧案真相",
     era: "depression_era_1920s",
@@ -43,10 +44,10 @@ function buildDemoInvestigator() {
       EDU: 50
     },
     skills: [
-      { key: "Spot Hidden", value: 60, tag: "investigation" },
-      { key: "Persuade", value: 55, tag: "social" },
-      { key: "Fighting", value: 50, tag: "action" },
-      { key: "Dodge", value: 40, tag: "action" }
+      { key: "Spot Hidden", value: 60, baseValue: 25, occupationPointsSpent: 25, interestPointsSpent: 10, tag: "investigation" },
+      { key: "Persuade", value: 55, baseValue: 10, occupationPointsSpent: 25, interestPointsSpent: 20, tag: "social" },
+      { key: "Fighting", value: 50, baseValue: 25, occupationPointsSpent: 0, interestPointsSpent: 25, tag: "action" },
+      { key: "Dodge", value: 40, baseValue: 20, occupationPointsSpent: 0, interestPointsSpent: 20, tag: "action" }
     ],
     inventory: [
       { name: "笔记本", category: "tool", quantity: 1 },
@@ -105,13 +106,15 @@ function runDemo() {
   const settlement = settleSession(session);
 
   return {
-    occupations: occupations.map((item) => ({ key: item.key, name: item.name, formula: item.occupationSkillFormula })),
+    occupations: occupations.map((item) => ({ key: item.key, name: item.name, formula: item.occupationSkillFormula, creditRatingRange: item.creditRatingRange })),
     investigatorPreview: {
       id: investigator.id,
       name: investigator.name,
       occupation: investigator.occupation,
       attributes: investigator.attributes,
       derived: investigator.resources,
+      pointBudgets: investigator.pointBudgets,
+      skillAllocation: investigator.skillAllocation,
       inventoryValidation: investigator.inventoryValidation,
       inventoryAllowance: investigator.inventoryAllowance
     },

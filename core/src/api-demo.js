@@ -24,16 +24,17 @@ function runApiDemo() {
     name: "沈青",
     age: 31,
     occupationKey: "detective",
+    creditRating: 28,
     persona: "谨慎、爱记笔记、对异常细节过敏",
     motivation: "想查清朋友失踪案",
     era: "depression_era_1920s",
     luck: 55,
     attributeAssignments: { STR: 60, CON: 50, DEX: 70, APP: 40, POW: 60, INT: 80, SIZ: 50, EDU: 50 },
     skills: [
-      { key: "Spot Hidden", value: 65, tag: "investigation" },
-      { key: "Persuade", value: 40, tag: "social" },
-      { key: "Fighting", value: 55, tag: "action" },
-      { key: "Dodge", value: 50, tag: "action" }
+      { key: "Spot Hidden", value: 65, baseValue: 25, occupationPointsSpent: 25, interestPointsSpent: 15, tag: "investigation" },
+      { key: "Persuade", value: 40, baseValue: 10, occupationPointsSpent: 15, interestPointsSpent: 15, tag: "social" },
+      { key: "Fighting", value: 55, baseValue: 25, occupationPointsSpent: 15, interestPointsSpent: 15, tag: "action" },
+      { key: "Dodge", value: 50, baseValue: 20, occupationPointsSpent: 0, interestPointsSpent: 30, tag: "action" }
     ],
     inventory: [
       { name: "手枪", category: "weapon", quantity: 1 },

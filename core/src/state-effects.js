@@ -49,10 +49,35 @@ function appendSocialFlag(npc, value) {
   if (!socialState.flags.includes(value)) socialState.flags.push(value);
 }
 
+function buildCountdown(change, sessionState) {
+  if (!change.value) return null;
+  const value = { ...change.value };
+
+  if (!value.key) {
+    value.key = `countdown-${Date.now()}-${ensureArray(sessionState.scene.timeState.countdowns).length + 1}`;
+  }
+  if (!Number.isInteger(value.remaining) || value.remaining < 0) {
+    throw new Error(`Invalid countdown remaining value: ${value.remaining}`);
+  }
+  if (!["minute", "round", "scene"].includes(value.unit)) {
+    throw new Error(`Invalid countdown unit: ${value.unit}`);
+  }
+  return value;
+}
+
 function applyStateChanges(sessionState, stateChanges = []) {
+  const timeProgress = { minutes: 0, rounds: 0, scenes: 0 };
+
   for (const change of stateChanges) {
     if (change.path === "scene.timeState.timelineMinute" && change.op === "inc") {
-      sessionState.scene.timeState.timelineMinute += Number(change.value || 0);
+      const delta = Number(change.value || 0);
+      sessionState.scene.timeState.timelineMinute += delta;
+      timeProgress.minutes += delta;
+    }
+
+    if (change.path === "scene.timeState.countdowns" && change.op === "append") {
+      sessionState.scene.timeState.countdowns = ensureArray(sessionState.scene.timeState.countdowns);
+      sessionState.scene.timeState.countdowns.push(buildCountdown(change, sessionState));
     }
 
     if (change.path === "scene.threats.exposure" && change.op === "inc") {
@@ -108,7 +133,7 @@ function applyStateChanges(sessionState, stateChanges = []) {
   }
 
   updateDangerLevel(sessionState.scene);
-  return sessionState;
+  return timeProgress;
 }
 
 function buildTalkStateChanges(action, success) {
@@ -210,22 +235,75 @@ function buildStateChanges(action, adjudication, success) {
 
   if (action.kind === "steal") {
     changes.push({ path: "scene.timeState.timelineMinute", op: "inc", value: success ? 1 : 2 });
-    if (!success) {
+    if (success) {
+      changes.push({
+        path: "scene.timeState.countdowns",
+        op: "append",
+        value: {
+          key: `steal-discovery-${action.targetNpc || "npc"}-${Date.now()}`,
+          label: action.delayedDiscoveryLabel || `${action.targetNpc} 过了一阵才发现失物不见。`,
+          remaining: action.discoveryDelayMinutes ?? 5,
+          unit: "minute",
+          effect: "steal_discovery",
+          targetNpc: action.targetNpc,
+          targetItem: action.targetItem
+        }
+      });
+    } else {
       changes.push({ path: "scene.threats.exposure", op: "inc", value: 2 });
       if (action.targetNpc) {
         changes.push({ path: "scene.npcAttitude", op: "shift", npcId: action.targetNpc, value: -1 });
         changes.push({ path: "scene.npcSocialState", op: "shift", npcId: action.targetNpc, field: "suspicion", value: 2 });
+        changes.push({
+          path: "scene.timeState.countdowns",
+          op: "append",
+          value: {
+            key: `steal-aftershock-${action.targetNpc}-${Date.now()}`,
+            label: `${action.targetNpc} 越想越不对，开始摸口袋清点东西。`,
+            remaining: action.discoveryDelayMinutes ?? 2,
+            unit: "minute",
+            effect: "steal_discovery",
+            targetNpc: action.targetNpc,
+            targetItem: action.targetItem
+          }
+        });
       }
     }
   }
 
   if (action.kind === "follow") {
     changes.push({ path: "scene.timeState.timelineMinute", op: "inc", value: success ? 10 : 5 });
-    if (!success) {
+    if (success) {
+      changes.push({
+        path: "scene.timeState.countdowns",
+        op: "append",
+        value: {
+          key: `follow-route-shift-${action.targetNpc || "npc"}-${Date.now()}`,
+          label: action.routeShiftLabel || `${action.targetNpc} 再过一段时间会转去下一处地点。`,
+          remaining: action.routeShiftDelayMinutes ?? 15,
+          unit: "minute",
+          effect: "route_shift",
+          targetNpc: action.targetNpc,
+          routeHint: Array.isArray(action.routineHints) ? action.routineHints.join("；") : null
+        }
+      });
+    } else {
       changes.push({ path: "scene.threats.exposure", op: "inc", value: 1 });
       if (action.targetNpc) {
         changes.push({ path: "scene.npcAttitude", op: "shift", npcId: action.targetNpc, value: -1 });
         changes.push({ path: "scene.npcSocialState", op: "shift", npcId: action.targetNpc, field: "suspicion", value: 1 });
+        changes.push({
+          path: "scene.timeState.countdowns",
+          op: "append",
+          value: {
+            key: `follow-alert-${action.targetNpc}-${Date.now()}`,
+            label: action.followAlertLabel || `${action.targetNpc} 很快会彻底确认有人跟着，并换一条更绕的路。`,
+            remaining: action.followAlertDelayMinutes ?? 8,
+            unit: "minute",
+            effect: "follow_alert",
+            targetNpc: action.targetNpc
+          }
+        });
       }
     }
   }

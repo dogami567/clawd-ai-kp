@@ -90,11 +90,110 @@ function calculatePointBudgets(attributes, occupation) {
   };
 }
 
+function normalizeSkillAllocation(skill = {}) {
+  const occupation = Number(
+    skill.occupationPointsSpent
+    ?? skill.occupationPoints
+    ?? skill.occupation
+    ?? skill.allocation?.occupation
+    ?? 0
+  );
+  const interest = Number(
+    skill.interestPointsSpent
+    ?? skill.interestPoints
+    ?? skill.interest
+    ?? skill.allocation?.interest
+    ?? 0
+  );
+  const base = Number(skill.baseValue ?? skill.base ?? skill.startingValue ?? 0);
+
+  return {
+    occupation,
+    interest,
+    base,
+    totalAllocated: occupation + interest,
+    finalValue: Number(skill.value ?? 0)
+  };
+}
+
+function validateSkillPointBudgets(skills = [], pointBudgets = {}) {
+  const usage = {
+    occupation: 0,
+    interest: 0,
+    trackedSkills: 0,
+    untrackedSkills: 0,
+    mismatches: []
+  };
+
+  for (const skill of skills) {
+    const allocation = normalizeSkillAllocation(skill);
+    const hasTrackedAllocation = allocation.occupation > 0 || allocation.interest > 0 || skill.baseValue !== undefined || skill.base !== undefined || skill.startingValue !== undefined || skill.allocation;
+
+    if (!hasTrackedAllocation) {
+      usage.untrackedSkills += 1;
+      continue;
+    }
+
+    usage.trackedSkills += 1;
+    usage.occupation += allocation.occupation;
+    usage.interest += allocation.interest;
+
+    if (allocation.finalValue !== allocation.base + allocation.totalAllocated) {
+      usage.mismatches.push({
+        key: skill.key,
+        expected: allocation.base + allocation.totalAllocated,
+        actual: allocation.finalValue
+      });
+    }
+  }
+
+  if (usage.mismatches.length) {
+    const detail = usage.mismatches.map((item) => `${item.key}: expected ${item.expected}, got ${item.actual}`).join("; ");
+    throw new Error(`Skill allocation values do not match base + spent points: ${detail}`);
+  }
+
+  if (usage.occupation > Number(pointBudgets.occupation || 0)) {
+    throw new Error(`Occupation skill points exceeded: spent ${usage.occupation}, budget ${pointBudgets.occupation}`);
+  }
+
+  if (usage.interest > Number(pointBudgets.interest || 0)) {
+    throw new Error(`Interest skill points exceeded: spent ${usage.interest}, budget ${pointBudgets.interest}`);
+  }
+
+  return {
+    occupationSpent: usage.occupation,
+    occupationBudget: Number(pointBudgets.occupation || 0),
+    interestSpent: usage.interest,
+    interestBudget: Number(pointBudgets.interest || 0),
+    trackedSkills: usage.trackedSkills,
+    untrackedSkills: usage.untrackedSkills,
+    valid: true
+  };
+}
+
+function validateCreditRating(creditRating, occupation) {
+  if (!Number.isInteger(creditRating) || creditRating < 0 || creditRating > 99) {
+    throw new Error(`Credit Rating must be an integer between 0 and 99: ${creditRating}`);
+  }
+
+  const range = occupation.creditRatingRange;
+  if (!Array.isArray(range) || range.length !== 2) return creditRating;
+
+  const [min, max] = range;
+  if (creditRating < min || creditRating > max) {
+    throw new Error(`Credit Rating ${creditRating} out of range for ${occupation.name}: expected ${min}-${max}`);
+  }
+
+  return creditRating;
+}
+
 function createInvestigatorRecord(input, occupation, baseAttributes, creationMethod) {
   const resources = calculateDerivedStats(baseAttributes);
   const validation = validateInventoryForEra(input.inventory || [], input.era);
   const allowance = buildConditionalAllowance(validation);
-  const creditRating = input.creditRating ?? occupation.creditRatingRange?.[0] ?? 0;
+  const creditRating = validateCreditRating(input.creditRating ?? occupation.creditRatingRange?.[0] ?? 0, occupation);
+  const pointBudgets = calculatePointBudgets(baseAttributes, occupation);
+  const skillAllocation = validateSkillPointBudgets(input.skills || [], pointBudgets);
   const finance = deriveFinanceFromCreditRating(creditRating);
 
   return {
@@ -124,7 +223,8 @@ function createInvestigatorRecord(input, occupation, baseAttributes, creationMet
     },
     attributeChecks: expandAttributeBlocks(baseAttributes),
     occupationTemplate: occupation,
-    pointBudgets: calculatePointBudgets(baseAttributes, occupation),
+    pointBudgets,
+    skillAllocation,
     creationMethod,
     resources,
     finance,
@@ -171,5 +271,8 @@ module.exports = {
   buildQuickFireAttributes,
   generateTraditionalAttributes,
   createInvestigatorFromQuickFire,
-  createInvestigatorFromTraditional
+  createInvestigatorFromTraditional,
+  calculatePointBudgets,
+  validateSkillPointBudgets,
+  validateCreditRating
 };

@@ -50,13 +50,17 @@
 - STR、CON、DEX、APP、POW、INT、SIZ、EDU
 
 ### 2.3 技能（v0.1）
-- 采用“职业模板 + 少量自由点”的简化分配。
+- 采用 CoC7 调查员创建思路：职业技能点 + 兴趣点。
+- 当前实现要求技能分配可追账：`value = baseValue + occupationPointsSpent + interestPointsSpent`。
+- `occupationPointsSpent` 总和不得超过职业公式算出的 `pointBudgets.occupation`。
+- `interestPointsSpent` 总和不得超过 `INT x 2` 算出的 `pointBudgets.interest`。
 - 必须至少有：侦查向、社交向、行动向三类可用技能。
 
 ### 2.4 初始资源
 - HP
 - SAN
 - Luck
+- Credit Rating（若职业模板给出范围，则创建阶段必须落在该范围内）
 - 初始物品（走项目已定的时代约束+配额规则）
 
 ---
@@ -129,6 +133,7 @@
 - 当前场景
 - 已获线索
 - 已触发事件
+- 挂起倒计时（如失物发现、路线转移、警觉变化）
 - NPC 态度变化
 - 角色状态（HP/SAN/关键异常）
 

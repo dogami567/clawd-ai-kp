@@ -19,25 +19,28 @@ function runNpcActionDemo() {
     name: "沈青",
     age: 31,
     occupationKey: "detective",
+    creditRating: 30,
     persona: "手稳，心也稳",
     motivation: "想先把钥匙摸到手",
     era: "depression_era_1920s",
     luck: 55,
     attributeAssignments: { STR: 60, CON: 50, DEX: 70, APP: 40, POW: 60, INT: 80, SIZ: 50, EDU: 50 },
     skills: [
-      { key: "Stealth", value: 55, tag: "action" },
-      { key: "Spot Hidden", value: 65, tag: "investigation" }
+      { key: "Stealth", value: 55, baseValue: 20, occupationPointsSpent: 35, interestPointsSpent: 0, tag: "action" },
+      { key: "Spot Hidden", value: 65, baseValue: 25, occupationPointsSpent: 30, interestPointsSpent: 10, tag: "investigation" }
     ],
     inventory: [{ name: "薄手套", category: "tool", quantity: 1 }]
   });
   addInvestigator(session, investigator);
   session.scene.participants.npcs.push({ id: "gravedigger", name: "守墓人", attitude: "neutral", trust: 0, status: "active", items: ["钥匙串", "皱烟盒", "零钱"] });
-  const random = scriptedRandom([61, 32]);
+  const random = scriptedRandom([32, 88]);
 
   const steal = submitAction(session, buildStealActionFromNpcCard({ actorId: investigator.id, npcId: "gravedigger", itemName: "钥匙串" }), random);
+  const afterSteal = submitAction(session, { kind: "advance_time", minutes: 5 });
   const follow = submitAction(session, buildFollowActionFromNpcCard({ actorId: investigator.id, npcId: "gravedigger" }), random);
+  const afterFollow = submitAction(session, { kind: "advance_time", minutes: 8 });
 
-  return { steal, follow, state: getState(session) };
+  return { steal, afterSteal, follow, afterFollow, state: getState(session) };
 }
 
 if (require.main === module) {

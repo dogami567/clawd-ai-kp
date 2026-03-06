@@ -87,16 +87,20 @@ node core/src/api-demo.js
 node core/src/adjudication-demo.js
 node core/src/voice-demo.js
 node core/src/scene-demo.js
+node core/src/npc-action-demo.js
+node core/src/coc7-validation.test.js
 ```
 
 当前 demo 已覆盖：
 - Quick-Fire 车卡
-- 职业模板读取
+- 基于 CoC7 的职业技能点 / 兴趣点预算校验
+- 基于职业模板的 `Credit Rating` 范围校验
 - 派生属性计算（HP / MP / SAN / Build / Damage Bonus / MOV）
 - 物品时代校验与条件化许可
 - 检定 -> fail-forward -> 战斗一轮 -> SAN -> 结团
-- 命令式 API 外壳（建角 / 开团 / 入团 / 提交行动 / 查状态 / 结团）
-- 动作裁定层（`explore / talk / use_item / risky_action`）
+- 命令式 API 外壳（建角 / 开团 / 入团 / 提交行动 / 查状态 / 结团 / 时间推进）
+- 动作裁定层（`explore / talk / use_item / risky_action / steal / follow`）
+- 偷窃 / 跟踪的延迟后果倒计时（失物发现、路线变化、警觉上升）
 - 单幕场景 demo（旧教堂、守墓人、祭坛、线索链、危险节点）
 
 ## 下一步

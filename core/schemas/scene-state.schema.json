@@ -36,8 +36,13 @@
             "required": ["key", "remaining", "unit"],
             "properties": {
               "key": { "type": "string", "minLength": 1 },
+              "label": { "type": "string" },
               "remaining": { "type": "integer", "minimum": 0 },
-              "unit": { "type": "string", "enum": ["round", "minute", "scene"] }
+              "unit": { "type": "string", "enum": ["round", "minute", "scene"] },
+              "effect": { "type": "string", "enum": ["steal_discovery", "follow_alert", "route_shift"] },
+              "targetNpc": { "type": "string" },
+              "targetItem": { "type": "string" },
+              "routeHint": { "type": "string" }
             }
           }
         }

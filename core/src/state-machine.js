@@ -38,6 +38,106 @@ function createSession({ sessionId, sceneId = "scene-intro-001", investigatorIds
   };
 }
 
+function ensureCountdownList(sessionState) {
+  sessionState.scene.timeState.countdowns = Array.isArray(sessionState.scene.timeState.countdowns)
+    ? sessionState.scene.timeState.countdowns
+    : [];
+  return sessionState.scene.timeState.countdowns;
+}
+
+function findNpc(sessionState, npcId) {
+  return (sessionState.scene.participants.npcs || []).find((item) => item.id === npcId || item.name === npcId) || null;
+}
+
+function updateDangerLevel(scene) {
+  const total = Number(scene.threats.exposure || 0) + Number(scene.threats.pressure || 0);
+  if (total >= 12) scene.threats.dangerLevel = "extreme";
+  else if (total >= 8) scene.threats.dangerLevel = "high";
+  else if (total >= 4) scene.threats.dangerLevel = "medium";
+  else scene.threats.dangerLevel = "low";
+}
+
+function appendTriggeredEvent(sessionState, label, extra = {}) {
+  sessionState.scene.events.push({
+    id: extra.id || `event-${Date.now()}-${sessionState.scene.events.length + 1}`,
+    label,
+    triggered: true,
+    triggerAtMinute: sessionState.scene.timeState.timelineMinute,
+    ...extra
+  });
+}
+
+function applyCountdownEffect(sessionState, countdown) {
+  const npc = countdown.targetNpc ? findNpc(sessionState, countdown.targetNpc) : null;
+
+  if (countdown.effect === "steal_discovery") {
+    sessionState.scene.threats.exposure = Math.min(10, sessionState.scene.threats.exposure + 2);
+    if (npc) {
+      npc.trust = Math.max(-5, Number(npc.trust || 0) - 2);
+      npc.attitude = npc.trust <= -2 ? "hostile" : "guarded";
+      npc.socialState = npc.socialState || { suspicion: 0, fear: 0, affinity: 0, obligation: 0, flags: [] };
+      npc.socialState.suspicion = Math.min(5, Number(npc.socialState.suspicion || 0) + 2);
+      npc.socialState.flags = Array.isArray(npc.socialState.flags) ? npc.socialState.flags : [];
+      if (!npc.socialState.flags.includes("theft_discovered")) npc.socialState.flags.push("theft_discovered");
+    }
+    appendTriggeredEvent(sessionState, countdown.label || `${countdown.targetNpc} 发现东西丢了，现场警觉明显上升。`);
+  }
+
+  if (countdown.effect === "follow_alert") {
+    sessionState.scene.threats.exposure = Math.min(10, sessionState.scene.threats.exposure + 1);
+    sessionState.scene.threats.pressure = Math.min(10, sessionState.scene.threats.pressure + 1);
+    if (npc) {
+      npc.attitude = "guarded";
+      npc.socialState = npc.socialState || { suspicion: 0, fear: 0, affinity: 0, obligation: 0, flags: [] };
+      npc.socialState.suspicion = Math.min(5, Number(npc.socialState.suspicion || 0) + 1);
+      npc.socialState.flags = Array.isArray(npc.socialState.flags) ? npc.socialState.flags : [];
+      if (!npc.socialState.flags.includes("changes_route")) npc.socialState.flags.push("changes_route");
+    }
+    appendTriggeredEvent(sessionState, countdown.label || `${countdown.targetNpc} 开始疑神疑鬼，临时改了路线。`);
+  }
+
+  if (countdown.effect === "route_shift") {
+    sessionState.scene.threats.pressure = Math.min(10, sessionState.scene.threats.pressure + 1);
+    appendTriggeredEvent(sessionState, countdown.label || `${countdown.targetNpc} 按既定节奏转进下一段路线。`, {
+      routeHint: countdown.routeHint || null
+    });
+  }
+
+  updateDangerLevel(sessionState.scene);
+}
+
+function resolveSceneCountdowns(sessionState, progress = {}) {
+  const countdowns = ensureCountdownList(sessionState);
+  const minuteStep = Number(progress.minutes || 0);
+  const roundStep = Number(progress.rounds || 0);
+  const triggered = [];
+
+  for (const countdown of countdowns) {
+    if (countdown.unit === "minute" && minuteStep > 0) {
+      countdown.remaining = Math.max(0, countdown.remaining - minuteStep);
+    }
+    if (countdown.unit === "round" && roundStep > 0) {
+      countdown.remaining = Math.max(0, countdown.remaining - roundStep);
+    }
+    if (countdown.unit === "scene" && progress.scenes) {
+      countdown.remaining = Math.max(0, countdown.remaining - Number(progress.scenes));
+    }
+  }
+
+  const pending = [];
+  for (const countdown of countdowns) {
+    if (countdown.remaining === 0) {
+      applyCountdownEffect(sessionState, countdown);
+      triggered.push(countdown);
+    } else {
+      pending.push(countdown);
+    }
+  }
+
+  sessionState.scene.timeState.countdowns = pending;
+  return triggered;
+}
+
 function registerInvestigator(sessionState, investigatorCard) {
   sessionState.investigators[investigatorCard.id] = investigatorCard;
   if (!sessionState.scene.participants.investigators.includes(investigatorCard.id)) {
@@ -117,6 +217,7 @@ function performSkillCheck(sessionState, input, randomInt) {
       cost: [],
       stateChanges: []
     },
+    countdownsTriggered: [],
     timestamp: new Date().toISOString()
   };
 
@@ -127,6 +228,9 @@ function performSkillCheck(sessionState, input, randomInt) {
     const narrative = applyFailForward(sessionState.scene, failType);
     event.outcome.narrative = `检定失败，但剧情推进：${narrative}`;
     event.outcome.cost.push({ kind: failType, value: 1 });
+    if (failType === "time") {
+      event.countdownsTriggered = resolveSceneCountdowns(sessionState, { minutes: 10 });
+    }
   }
 
   sessionState.checkLog.push(event);
@@ -194,6 +298,7 @@ function resolveCombatRound(sessionState, action, randomInt) {
   };
 
   sessionState.scene.timeState.combatRound += 1;
+  event.countdownsTriggered = resolveSceneCountdowns(sessionState, { rounds: 1 });
   return event;
 }
 
@@ -242,7 +347,13 @@ function settleSession(sessionState) {
     investigatorSnapshots: snapshot,
     clueSummary: sessionState.scene.clues,
     eventCount: sessionState.checkLog.length,
-    unresolved: sessionState.scene.events.filter((item) => !item.triggered).map((item) => item.label)
+    unresolved: sessionState.scene.events.filter((item) => !item.triggered).map((item) => item.label),
+    pendingCountdowns: sessionState.scene.timeState.countdowns.map((item) => ({
+      key: item.key,
+      remaining: item.remaining,
+      unit: item.unit,
+      label: item.label
+    }))
   };
 
   return sessionState.settlement;
@@ -256,5 +367,7 @@ module.exports = {
   startCombat,
   resolveCombatRound,
   runSanCheck,
-  settleSession
+  settleSession,
+  resolveSceneCountdowns,
+  updateDangerLevel
 };

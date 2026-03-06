@@ -6,7 +6,8 @@ const {
   startCombat,
   resolveCombatRound,
   runSanCheck,
-  settleSession
+  settleSession,
+  resolveSceneCountdowns
 } = require("./state-machine");
 const { createInvestigatorFromQuickFire } = require("./character-creation");
 const { adjudicateAction } = require("./adjudication-engine");
@@ -71,7 +72,8 @@ function buildAdjudicationResponse(sessionState, actor, action, randomInt) {
           narrative: action.onDirectSuccess || "行动直接生效，局势向前推进。",
           nextPrompt: adjudication.nextPrompt,
           cost: [],
-          stateChanges: []
+          stateChanges: [],
+          countdownsTriggered: []
         }
       }
     };
@@ -97,12 +99,17 @@ function buildAdjudicationResponse(sessionState, actor, action, randomInt) {
     duration: adjudication.duration,
     balanceNote: adjudication.balanceNote,
     leverageScore: adjudication.leverageScore,
-    narrativeBonus: adjudication.narrativeBonus
+    narrativeBonus: adjudication.narrativeBonus,
+    failForward: adjudication.failForward
   };
   event.outcome.stateChanges = buildStateChanges(action, adjudication, event.result.success);
-  applyStateChanges(sessionState, event.outcome.stateChanges);
+  const timeProgress = applyStateChanges(sessionState, event.outcome.stateChanges);
+  event.countdownsTriggered = [
+    ...(event.countdownsTriggered || []),
+    ...resolveSceneCountdowns(sessionState, timeProgress)
+  ];
   event.contentEffects = applyContentEffects(sessionState, action, event.result.success, event.result.successLevel);
-  event.outcome.nextPrompt = buildOutcomePrompt(action, event.result.success, adjudication, event.contentEffects);
+  event.outcome.nextPrompt = buildOutcomePrompt(action, event.result.success, event.adjudication, event.contentEffects);
 
   return {
     kind: action.kind,
@@ -121,7 +128,13 @@ function buildOutcomePrompt(action, success, adjudication, contentEffects = {}) 
     return contentEffects.intelLine;
   }
   if (action.kind === "use_item" && contentEffects.revealedClues?.length) {
-    return action.onSuccessPrompt || `你手上的东西还真把一层旧痕给撬开了。`;
+    return action.onSuccessPrompt || "你手上的东西还真把一层旧痕给撬开了。";
+  }
+  if (action.kind === "steal" && contentEffects.aftermathLine) {
+    return `${contentEffects.intelLine} ${contentEffects.aftermathLine}`;
+  }
+  if (action.kind === "follow" && contentEffects.routeLine) {
+    return `${contentEffects.intelLine} 后面若再拖，路线还会继续变。`;
   }
   if (success) {
     return action.onSuccessPrompt || `这一下成了，${adjudication.intent} 已经开始起作用了。`;
@@ -134,6 +147,19 @@ function submitAction(sessionState, action, randomInt) {
     return {
       kind: "skill_check",
       event: performSkillCheck(sessionState, action, randomInt)
+    };
+  }
+
+  if (action.kind === "advance_time") {
+    const minutes = Number(action.minutes || 0);
+    const rounds = Number(action.rounds || 0);
+    sessionState.scene.timeState.timelineMinute += minutes;
+    sessionState.scene.timeState.combatRound += rounds;
+    return {
+      kind: "advance_time",
+      minutes,
+      rounds,
+      triggered: resolveSceneCountdowns(sessionState, { minutes, rounds, scenes: action.scenes || 0 })
     };
   }
 
@@ -183,7 +209,10 @@ function getState(sessionState) {
       hp: item.resources.hp,
       san: item.resources.san,
       luck: item.resources.luck,
-      conditions: item.status.conditions
+      conditions: item.status.conditions,
+      pointBudgets: item.pointBudgets,
+      skillAllocation: item.skillAllocation,
+      creditRating: item.identity.creditRating
     })),
     checkCount: sessionState.checkLog.length,
     settlementReady: Boolean(sessionState.settlement)
