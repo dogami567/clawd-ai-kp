@@ -9,6 +9,7 @@ const {
   settleSession
 } = require("./state-machine");
 const { createInvestigatorFromQuickFire } = require("./character-creation");
+const { adjudicateAction } = require("./adjudication-engine");
 
 function createCharacter(input) {
   return createInvestigatorFromQuickFire(input);
@@ -41,12 +42,74 @@ function addInvestigator(sessionState, investigator) {
   };
 }
 
+function buildAdjudicationResponse(sessionState, actor, action, randomInt) {
+  const adjudication = adjudicateAction(sessionState, actor, action);
+
+  if (!adjudication.needsCheck) {
+    return {
+      kind: action.kind,
+      adjudication,
+      event: {
+        outcome: {
+          narrative: action.onDirectSuccess || "行动直接生效，局势向前推进。",
+          nextPrompt: adjudication.nextPrompt,
+          cost: [],
+          stateChanges: []
+        }
+      }
+    };
+  }
+
+  const event = performSkillCheck(
+    sessionState,
+    {
+      actorId: action.actorId,
+      skillKey: adjudication.skillKey,
+      mode: action.mode || "open",
+      difficulty: adjudication.difficulty,
+      failForward: adjudication.failForward,
+      checkType: "adjudication"
+    },
+    randomInt
+  );
+
+  event.adjudication = {
+    intent: adjudication.intent,
+    basis: adjudication.basis,
+    impact: adjudication.impact,
+    duration: adjudication.duration,
+    balanceNote: adjudication.balanceNote
+  };
+  event.outcome.nextPrompt = buildOutcomePrompt(action, event.result.success, adjudication);
+
+  return {
+    kind: action.kind,
+    adjudication,
+    event
+  };
+}
+
+function buildOutcomePrompt(action, success, adjudication) {
+  if (success) {
+    return action.onSuccessPrompt || `行动成功了，${adjudication.intent} 取得了阶段性效果。`;
+  }
+  return action.onFailPrompt || `行动没完全按计划进行，但剧情仍在推进，代价类型：${adjudication.failForward}。`;
+}
+
 function submitAction(sessionState, action, randomInt) {
   if (action.kind === "skill_check") {
     return {
       kind: "skill_check",
       event: performSkillCheck(sessionState, action, randomInt)
     };
+  }
+
+  if (["explore", "talk", "use_item", "risky_action"].includes(action.kind)) {
+    const actor = sessionState.investigators[action.actorId];
+    if (!actor) {
+      throw new Error(`Investigator not found: ${action.actorId}`);
+    }
+    return buildAdjudicationResponse(sessionState, actor, action, randomInt);
   }
 
   if (action.kind === "start_combat") {

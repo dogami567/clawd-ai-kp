@@ -15,6 +15,7 @@ const { calculateDerivedStats } = require("./derived-stats");
 const { listOccupationTemplates, getOccupationTemplate } = require("./occupation-templates");
 const { validateInventoryForEra, buildConditionalAllowance } = require("./inventory-rules");
 const { createCharacter, startSessionApi, addInvestigator, submitAction, getState, settleSessionApi } = require("./api");
+const { adjudicateAction } = require("./adjudication-engine");
 
 module.exports = {
   createSession,
@@ -40,5 +41,6 @@ module.exports = {
   addInvestigator,
   submitAction,
   getState,
-  settleSessionApi
+  settleSessionApi,
+  adjudicateAction
 };

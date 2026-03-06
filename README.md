@@ -41,6 +41,7 @@ AI KP（TRPG 跑团主持）项目仓库。
 cd /home/node/clawd/clawd-ai-kp
 node core/src/demo.js
 node core/src/api-demo.js
+node core/src/adjudication-demo.js
 ```
 
 当前 demo 已覆盖：
@@ -50,6 +51,7 @@ node core/src/api-demo.js
 - 物品时代校验与条件化许可
 - 检定 -> fail-forward -> 战斗一轮 -> SAN -> 结团
 - 命令式 API 外壳（建角 / 开团 / 入团 / 提交行动 / 查状态 / 结团）
+- 动作裁定层（`explore / talk / use_item / risky_action`）
 
 ## 下一步
 1. 把 `core/src` 封装成命令式 API（开团/入团/行动/检定/状态/结团）
