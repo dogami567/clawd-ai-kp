@@ -151,12 +151,34 @@ function testCombatDamageAndMajorWounds() {
   assert.equal(target.status.majorWound, result.event.damage >= Math.floor(target.resources.hpMax / 2));
 }
 
+function testWeaponProfiles() {
+  const session = startSessionApi({ sessionId: 'combat-weapon-profile', summary: '武器表测试', location: '院墙边' });
+  const actor = buildCharacter({ skills: [{ key: 'Fighting', occupationPointsSpent: 15, interestPointsSpent: 15, value: 55 }] });
+  const target = buildCharacter({ id: 'pc-target-weapon', name: '白砚', skills: [{ key: 'Dodge', interestPointsSpent: 5, value: 40 }] });
+  addInvestigator(session, actor);
+  addInvestigator(session, target);
+  submitAction(session, { kind: 'start_combat', enemies: [] });
+
+  const result = submitAction(session, {
+    kind: 'combat_round',
+    actorId: actor.id,
+    targetActorId: target.id,
+    weaponKey: 'knife',
+    attackValue: 55,
+    defendSkill: 'Dodge',
+    defendValue: 40
+  }, scriptedRandom([10, 88, 2]));
+
+  assert.equal(result.event.damageFormula.startsWith('1D4+2'), true);
+}
+
 function run() {
   testSkillBudgetValidation();
   testCreditRatingValidation();
   testDelayedStealConsequences();
   testDelayedFollowAlert();
   testCombatDamageAndMajorWounds();
+  testWeaponProfiles();
   console.log("coc7-validation.test.js passed");
 }
 

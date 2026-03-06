@@ -16,6 +16,7 @@ const { listOccupationTemplates, getOccupationTemplate } = require("./occupation
 const { validateInventoryForEra, buildConditionalAllowance } = require("./inventory-rules");
 const { createCharacter, startSessionApi, addInvestigator, submitAction, getState, settleSessionApi } = require("./api");
 const { adjudicateAction } = require("./adjudication-engine");
+const { WEAPON_TABLE, getWeaponProfile, buildCombatActionFromWeapon } = require("./weapon-table");
 
 module.exports = {
   createSession,
@@ -44,5 +45,8 @@ module.exports = {
   submitAction,
   getState,
   settleSessionApi,
-  adjudicateAction
+  adjudicateAction,
+  WEAPON_TABLE,
+  getWeaponProfile,
+  buildCombatActionFromWeapon
 };

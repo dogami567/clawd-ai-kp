@@ -20,6 +20,7 @@ const {
 } = require("./voice-lines");
 const { applyStateChanges, buildStateChanges } = require("./state-effects");
 const { applyContentEffects } = require("./content-effects");
+const { buildCombatActionFromWeapon } = require("./weapon-table");
 
 function createCharacter(input) {
   return createInvestigatorFromQuickFire(input);
@@ -182,9 +183,10 @@ function submitAction(sessionState, action, randomInt) {
   }
 
   if (action.kind === "combat_round") {
+    const weaponizedAction = action.weaponKey ? { ...action, ...buildCombatActionFromWeapon(action) } : action;
     return {
       kind: "combat_round",
-      event: resolveCombatRound(sessionState, action, randomInt)
+      event: resolveCombatRound(sessionState, weaponizedAction, randomInt)
     };
   }
 
