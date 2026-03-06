@@ -61,9 +61,10 @@
             "properties": {
               "id": { "type": "string", "minLength": 1 },
               "name": { "type": "string", "minLength": 1 },
-              "attitude": { "type": "string", "enum": ["friendly", "neutral", "hostile", "unknown"] },
+              "attitude": { "type": "string", "enum": ["friendly", "neutral", "guarded", "hostile", "unknown"] },
               "status": { "type": "string", "enum": ["active", "down", "escaped", "arriving"] },
-              "arrivalRound": { "type": "integer", "minimum": 0 }
+              "arrivalRound": { "type": "integer", "minimum": 0 },
+              "trust": { "type": "integer", "minimum": -5, "maximum": 5 }
             }
           }
         }
@@ -78,8 +79,9 @@
         "properties": {
           "id": { "type": "string", "minLength": 1 },
           "title": { "type": "string", "minLength": 1 },
-          "kind": { "type": "string", "enum": ["core", "optional"] },
+          "kind": { "type": "string", "enum": ["core", "optional", "partial", "false_lead"] },
           "revealed": { "type": "boolean" },
+          "quality": { "type": "string", "enum": ["clear", "partial", "distorted"] },
           "source": { "type": "string" }
         }
       }

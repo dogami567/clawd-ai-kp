@@ -13,6 +13,14 @@ function updateDangerLevel(scene) {
   else scene.threats.dangerLevel = "low";
 }
 
+function adjustNpcAttitude(npc, delta) {
+  npc.trust = Math.max(-5, Math.min(5, Number(npc.trust || 0) + Number(delta || 0)));
+  if (npc.trust >= 2) npc.attitude = "friendly";
+  else if (npc.trust >= 0) npc.attitude = "neutral";
+  else if (npc.trust >= -2) npc.attitude = "guarded";
+  else npc.attitude = "hostile";
+}
+
 function applyStateChanges(sessionState, stateChanges = []) {
   for (const change of stateChanges) {
     if (change.path === "scene.timeState.timelineMinute" && change.op === "inc") {
@@ -42,6 +50,13 @@ function applyStateChanges(sessionState, stateChanges = []) {
       sessionState.scene.participants.npcs.push(change.value);
     }
 
+    if (change.path === "scene.npcAttitude" && change.op === "shift") {
+      const npc = ensureArray(sessionState.scene.participants.npcs).find((item) => item.id === change.npcId || item.name === change.npcId);
+      if (npc) {
+        adjustNpcAttitude(npc, change.value);
+      }
+    }
+
     if (change.path === "investigator.status.conditions" && change.op === "append") {
       const investigator = sessionState.investigators[change.actorId];
       if (investigator) {
@@ -67,7 +82,8 @@ function buildStateChanges(action, adjudication, success) {
         value: {
           id: `clue-${Date.now()}`,
           title: action.clueTitle || action.intent,
-          kind: success && adjudication.impact === "large" ? "core" : "optional",
+          kind: success && adjudication.impact === "large" ? "core" : (action.clueKind || "optional"),
+          quality: action.clueQuality || (success ? "clear" : "partial"),
           revealed: true,
           source: action.skillKey || "explore"
         }
@@ -77,6 +93,9 @@ function buildStateChanges(action, adjudication, success) {
 
   if (action.kind === "talk") {
     changes.push({ path: "scene.timeState.timelineMinute", op: "inc", value: 5 });
+    if (action.targetNpc) {
+      changes.push({ path: "scene.npcAttitude", op: "shift", npcId: action.targetNpc, value: success ? 1 : -1 });
+    }
     if (!success) {
       changes.push({ path: "scene.threats.pressure", op: "inc", value: 1 });
       if (action.targetNpc) {

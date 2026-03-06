@@ -31,7 +31,8 @@ function runVoiceDemo() {
     inventory: [{ name: "手电", category: "tool", quantity: 1 }]
   });
   addInvestigator(session, investigator);
-  const random = scriptedRandom([31, 78]);
+  session.scene.participants.npcs.push({ id: "gravedigger", name: "守墓人", attitude: "neutral", trust: 0, status: "active" });
+  const random = scriptedRandom([31, 78, 44]);
 
   const explore = submitAction(session, {
     kind: "explore",
@@ -47,6 +48,19 @@ function runVoiceDemo() {
     onSuccessPrompt: "你确实看出不对了。那不像自然磨出来的痕，更像是有人反复把什么细长东西塞进去又拔出来。"
   }, random);
 
+  const talk = submitAction(session, {
+    kind: "talk",
+    actorId: investigator.id,
+    intent: "我先安抚守墓人，再把话慢慢引到昨晚的钟声上",
+    skillKey: "Persuade",
+    targetNpc: "gravedigger",
+    riskLevel: "low",
+    leverageScore: 1,
+    narrativeBonus: 1,
+    impactScore: 1,
+    mode: "open"
+  }, random);
+
   const risky = submitAction(session, {
     kind: "risky_action",
     actorId: investigator.id,
@@ -60,7 +74,7 @@ function runVoiceDemo() {
     onFailPrompt: "木板是掀开了，但那声脆响一下就在教堂里荡开了。你还没来得及往里细看，右边走廊深处先传来了一下很轻的拖擦声。"
   }, random);
 
-  return { explore, risky, state: getState(session) };
+  return { explore, talk, risky, state: getState(session) };
 }
 
 if (require.main === module) {
