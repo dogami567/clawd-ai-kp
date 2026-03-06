@@ -1,6 +1,7 @@
 const { calculateHalfAndFifth, calculateDerivedStats } = require("./derived-stats");
 const { getOccupationTemplate } = require("./occupation-templates");
 const { validateInventoryForEra, buildConditionalAllowance } = require("./inventory-rules");
+const { deriveFinanceFromCreditRating } = require("./finance-rules");
 
 const QUICK_FIRE_VALUES = [40, 50, 50, 50, 60, 60, 70, 80];
 const ATTRIBUTE_KEYS = ["STR", "CON", "DEX", "APP", "POW", "INT", "SIZ", "EDU"];
@@ -39,6 +40,9 @@ function createInvestigatorFromQuickFire(input) {
   const validation = validateInventoryForEra(input.inventory || [], input.era);
   const allowance = buildConditionalAllowance(validation);
 
+  const creditRating = input.creditRating ?? occupation.creditRatingRange?.[0] ?? 0;
+  const finance = deriveFinanceFromCreditRating(creditRating);
+
   return {
     id: input.id,
     name: input.name,
@@ -48,6 +52,12 @@ function createInvestigatorFromQuickFire(input) {
     persona: input.persona,
     motivation: input.motivation,
     era: input.era,
+    identity: {
+      sex: input.sex || "",
+      residence: input.residence || "unknown",
+      birthplace: input.birthplace || "unknown",
+      creditRating
+    },
     attributes: {
       STR: baseAttributes.STR,
       CON: baseAttributes.CON,
@@ -61,12 +71,25 @@ function createInvestigatorFromQuickFire(input) {
     attributeChecks: expandAttributeBlocks(baseAttributes),
     occupationTemplate: occupation,
     resources,
+    finance,
+    backstory: {
+      traits: input.backstory?.traits || [],
+      beliefs: input.backstory?.beliefs || [],
+      significantPeople: input.backstory?.significantPeople || [],
+      meaningfulLocations: input.backstory?.meaningfulLocations || [],
+      treasuredPossessions: input.backstory?.treasuredPossessions || [],
+      injuriesScars: input.backstory?.injuriesScars || [],
+      phobiasManias: input.backstory?.phobiasManias || []
+    },
     skills: input.skills || [],
     inventory: input.inventory || [],
     inventoryValidation: validation,
     inventoryAllowance: allowance,
     status: {
       conditions: ["normal"],
+      majorWound: false,
+      temporaryInsanity: false,
+      indefiniteInsanity: false,
       temporaryEffects: []
     }
   };

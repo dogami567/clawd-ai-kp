@@ -14,7 +14,10 @@
     "skills",
     "resources",
     "inventory",
-    "status"
+    "status",
+    "identity",
+    "finance",
+    "backstory"
   ],
   "properties": {
     "id": { "type": "string", "minLength": 1 },
@@ -22,6 +25,17 @@
     "age": { "type": "integer", "minimum": 10, "maximum": 120 },
     "occupation": { "type": "string", "minLength": 1 },
     "persona": { "type": "string", "minLength": 1 },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["residence", "birthplace", "creditRating"],
+      "properties": {
+        "sex": { "type": "string" },
+        "residence": { "type": "string", "minLength": 1 },
+        "birthplace": { "type": "string", "minLength": 1 },
+        "creditRating": { "type": "integer", "minimum": 0, "maximum": 99 }
+      }
+    },
     "attributes": {
       "type": "object",
       "additionalProperties": false,
@@ -60,7 +74,12 @@
         "hpMax": { "type": "integer", "minimum": 1 },
         "san": { "type": "integer", "minimum": 0, "maximum": 99 },
         "sanMax": { "type": "integer", "minimum": 1, "maximum": 99 },
-        "luck": { "type": "integer", "minimum": 0, "maximum": 99 }
+        "luck": { "type": "integer", "minimum": 0, "maximum": 99 },
+        "mp": { "type": "integer", "minimum": 0 },
+        "mpMax": { "type": "integer", "minimum": 0 },
+        "moveRate": { "type": "integer", "minimum": 1 },
+        "build": { "type": "integer" },
+        "damageBonusText": { "type": "string" }
       }
     },
     "inventory": {
@@ -77,6 +96,31 @@
         }
       }
     },
+    "finance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "cash", "assets", "spendingLevel"],
+      "properties": {
+        "level": { "type": "string", "enum": ["penniless", "poor", "average", "wealthy", "rich", "super_rich"] },
+        "cash": { "type": "number", "minimum": 0 },
+        "assets": { "type": "number", "minimum": 0 },
+        "spendingLevel": { "type": "number", "minimum": 0 }
+      }
+    },
+    "backstory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["traits", "beliefs", "significantPeople", "meaningfulLocations", "treasuredPossessions", "injuriesScars", "phobiasManias"],
+      "properties": {
+        "traits": { "type": "array", "items": { "type": "string" } },
+        "beliefs": { "type": "array", "items": { "type": "string" } },
+        "significantPeople": { "type": "array", "items": { "type": "string" } },
+        "meaningfulLocations": { "type": "array", "items": { "type": "string" } },
+        "treasuredPossessions": { "type": "array", "items": { "type": "string" } },
+        "injuriesScars": { "type": "array", "items": { "type": "string" } },
+        "phobiasManias": { "type": "array", "items": { "type": "string" } }
+      }
+    },
     "status": {
       "type": "object",
       "additionalProperties": false,
@@ -86,9 +130,12 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["normal", "injured", "critical", "panic", "temporary_insanity", "unconscious"]
+            "enum": ["normal", "injured", "critical", "panic", "temporary_insanity", "indefinite_insanity", "unconscious"]
           }
         },
+        "majorWound": { "type": "boolean" },
+        "temporaryInsanity": { "type": "boolean" },
+        "indefiniteInsanity": { "type": "boolean" },
         "temporaryEffects": {
           "type": "array",
           "items": {
