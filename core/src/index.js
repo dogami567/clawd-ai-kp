@@ -14,6 +14,7 @@ const { createInvestigatorFromQuickFire, QUICK_FIRE_VALUES, ATTRIBUTE_KEYS } = r
 const { calculateDerivedStats } = require("./derived-stats");
 const { listOccupationTemplates, getOccupationTemplate } = require("./occupation-templates");
 const { validateInventoryForEra, buildConditionalAllowance } = require("./inventory-rules");
+const { createCharacter, startSessionApi, addInvestigator, submitAction, getState, settleSessionApi } = require("./api");
 
 module.exports = {
   createSession,
@@ -33,5 +34,11 @@ module.exports = {
   listOccupationTemplates,
   getOccupationTemplate,
   validateInventoryForEra,
-  buildConditionalAllowance
+  buildConditionalAllowance,
+  createCharacter,
+  startSessionApi,
+  addInvestigator,
+  submitAction,
+  getState,
+  settleSessionApi
 };
