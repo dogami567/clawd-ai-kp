@@ -101,7 +101,7 @@ function buildAdjudicationResponse(sessionState, actor, action, randomInt) {
   };
   event.outcome.stateChanges = buildStateChanges(action, adjudication, event.result.success);
   applyStateChanges(sessionState, event.outcome.stateChanges);
-  event.contentEffects = applyContentEffects(sessionState, action, event.result.success);
+  event.contentEffects = applyContentEffects(sessionState, action, event.result.success, event.result.successLevel);
   event.outcome.nextPrompt = buildOutcomePrompt(action, event.result.success, adjudication, event.contentEffects);
 
   return {

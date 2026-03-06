@@ -1,0 +1,51 @@
+{
+  "id": "gravedigger",
+  "name": "守墓人",
+  "profile": {
+    "role": "旧教堂守墓人",
+    "age": "五十多岁",
+    "ethnicity": "本地镇民",
+    "defaultAttitude": "neutral"
+  },
+  "appearance": {
+    "clothing": ["旧呢大衣", "磨损皮靴", "灰围巾"],
+    "visibleItems": ["提灯", "钥匙串", "皱烟盒"],
+    "overallImpression": "人瘦，背有点驼，眼神总像在防着别人碰教堂里的东西。"
+  },
+  "wealth": {
+    "level": "poor",
+    "cashOnHand": "零碎零钱，不多"
+  },
+  "inventory": [
+    { "name": "钥匙串", "category": "key", "stealDifficulty": "hard", "importance": "critical", "noticedAfter": "很快会摸口袋确认", "reaction": "发现不见会立刻紧张并优先怀疑刚接近过自己的人" },
+    { "name": "皱烟盒", "category": "trinket", "stealDifficulty": "regular", "importance": "low", "noticedAfter": "抽烟时才发现", "reaction": "会骂骂咧咧，但不一定立刻追人" },
+    { "name": "零钱", "category": "money", "stealDifficulty": "regular", "importance": "medium", "noticedAfter": "买东西或摸口袋时发现", "reaction": "会先怀疑外人，再去翻自己常放东西的地方" }
+  ],
+  "behavior": {
+    "routine": [
+      "傍晚会绕墓地和钟楼下巡一圈",
+      "听见教堂异响时会先停一下，再提灯过去",
+      "和陌生人讲话时不喜欢被贴身靠近"
+    ],
+    "alertness": "medium",
+    "followDifficulty": "regular",
+    "suspicionTriggers": ["被人贴身接近", "别人盯着钥匙看", "深夜还在教堂附近徘徊", "反复追问昨晚钟声"]
+  },
+  "social": {
+    "softSpots": ["失踪的人", "镇上年轻人出事", "别人承认自己也在害怕"],
+    "resentments": ["外地人瞎指挥", "别人把他当疯子", "有人想强闯钟楼"],
+    "respondsTo": {
+      "charm": "weak",
+      "persuade": "normal",
+      "intimidate": "weak",
+      "empathy": "strong",
+      "bribery": "weak"
+    }
+  },
+  "knowledge": [
+    { "id": "bell-sound", "topic": "钟楼异响", "text": "昨晚钟楼那边有人，而且那声音不是正常的钟声。", "revealAt": "fail_forward", "requiresMethod": ["persuade", "empathy"] },
+    { "id": "altar-fear", "topic": "祭坛异常", "text": "他亲眼看见过有人半夜在祭坛那边蹲着挖什么，所以他一直不想让人乱碰。", "revealAt": "regular_success", "requiresMethod": ["persuade", "empathy"] },
+    { "id": "tower-key", "topic": "钟楼钥匙", "text": "钟楼不是一直锁着，旧钥匙平时就在他身上。", "revealAt": "hard_success", "requiresMethod": ["persuade", "intimidate", "bribery"] },
+    { "id": "deep-awake", "topic": "深处异动", "text": "他最近几晚都听见教堂深处有拖擦声，所以他根本不敢一个人进去。", "revealAt": "extreme_success", "requiresMethod": ["empathy", "persuade"] }
+  ]
+}

@@ -81,7 +81,6 @@ function runSceneDemo() {
     riskLevel: "low",
     impactScore: 1,
     revealClueId: "clue-wall-symbol",
-    topicHint: "昨晚钟楼那边有人，而且声音不是正常的钟声",
     mode: "open"
   }, random);
 

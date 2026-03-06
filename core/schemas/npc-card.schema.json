@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clawd-ai-kp.local/schemas/npc-card.schema.json",
+  "title": "NpcCard",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "profile", "appearance", "wealth", "inventory", "behavior", "social", "knowledge"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "age", "ethnicity", "defaultAttitude"],
+      "properties": {
+        "role": { "type": "string" },
+        "age": { "type": "string" },
+        "ethnicity": { "type": "string" },
+        "defaultAttitude": { "type": "string", "enum": ["friendly", "neutral", "guarded", "hostile", "unknown"] }
+      }
+    },
+    "appearance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clothing", "visibleItems", "overallImpression"],
+      "properties": {
+        "clothing": { "type": "array", "items": { "type": "string" } },
+        "visibleItems": { "type": "array", "items": { "type": "string" } },
+        "overallImpression": { "type": "string" }
+      }
+    },
+    "wealth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "cashOnHand"],
+      "properties": {
+        "level": { "type": "string", "enum": ["poor", "modest", "comfortable", "wealthy"] },
+        "cashOnHand": { "type": "string" }
+      }
+    },
+    "inventory": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "category", "stealDifficulty", "importance", "noticedAfter"],
+        "properties": {
+          "name": { "type": "string" },
+          "category": { "type": "string", "enum": ["money", "key", "tool", "weapon", "document", "trinket", "other"] },
+          "stealDifficulty": { "type": "string", "enum": ["easy", "regular", "hard", "extreme"] },
+          "importance": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+          "noticedAfter": { "type": "string" },
+          "reaction": { "type": "string" }
+        }
+      }
+    },
+    "behavior": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["routine", "alertness", "followDifficulty", "suspicionTriggers"],
+      "properties": {
+        "routine": { "type": "array", "items": { "type": "string" } },
+        "alertness": { "type": "string", "enum": ["low", "medium", "high"] },
+        "followDifficulty": { "type": "string", "enum": ["easy", "regular", "hard", "extreme"] },
+        "suspicionTriggers": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "social": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["softSpots", "resentments", "respondsTo"],
+      "properties": {
+        "softSpots": { "type": "array", "items": { "type": "string" } },
+        "resentments": { "type": "array", "items": { "type": "string" } },
+        "respondsTo": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "charm": { "type": "string", "enum": ["weak", "normal", "strong"] },
+            "persuade": { "type": "string", "enum": ["weak", "normal", "strong"] },
+            "intimidate": { "type": "string", "enum": ["weak", "normal", "strong"] },
+            "empathy": { "type": "string", "enum": ["weak", "normal", "strong"] },
+            "bribery": { "type": "string", "enum": ["weak", "normal", "strong"] }
+          }
+        }
+      }
+    },
+    "knowledge": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "topic", "text", "revealAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "topic": { "type": "string" },
+          "text": { "type": "string" },
+          "revealAt": { "type": "string", "enum": ["regular_success", "hard_success", "extreme_success", "fail_forward"] },
+          "requiresMethod": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}
