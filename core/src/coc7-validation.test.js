@@ -117,3 +117,24 @@ if (require.main === module) {
 }
 
 module.exports = { run };
+
+
+(function autoFillsBaseSkillDefaults() {
+  const character = buildCharacter({
+    occupationKey: 'detective',
+    skills: [
+      { key: 'Spot Hidden', occupationPointsSpent: 25, interestPointsSpent: 10 },
+      { key: 'Dodge', interestPointsSpent: 5 },
+      { key: 'Own Language', occupationPointsSpent: 10 }
+    ]
+  });
+
+  const spotHidden = character.skills.find((skill) => skill.key === 'Spot Hidden');
+  const dodge = character.skills.find((skill) => skill.key === 'Dodge');
+  const ownLanguage = character.skills.find((skill) => skill.key === 'Own Language');
+
+  assert.equal(spotHidden.baseValue, 25);
+  assert.equal(spotHidden.value, 60);
+  assert.equal(dodge.baseValue, Math.floor(character.attributes.DEX / 2));
+  assert.equal(ownLanguage.baseValue, character.attributes.EDU);
+})();

@@ -2,6 +2,7 @@ const { calculateHalfAndFifth, calculateDerivedStats } = require("./derived-stat
 const { getOccupationTemplate } = require("./occupation-templates");
 const { validateInventoryForEra, buildConditionalAllowance } = require("./inventory-rules");
 const { deriveFinanceFromCreditRating } = require("./finance-rules");
+const { applySkillDefaults } = require("./skill-defaults");
 
 const QUICK_FIRE_VALUES = [40, 50, 50, 50, 60, 60, 70, 80];
 const ATTRIBUTE_KEYS = ["STR", "CON", "DEX", "APP", "POW", "INT", "SIZ", "EDU"];
@@ -193,7 +194,8 @@ function createInvestigatorRecord(input, occupation, baseAttributes, creationMet
   const allowance = buildConditionalAllowance(validation);
   const creditRating = validateCreditRating(input.creditRating ?? occupation.creditRatingRange?.[0] ?? 0, occupation);
   const pointBudgets = calculatePointBudgets(baseAttributes, occupation);
-  const skillAllocation = validateSkillPointBudgets(input.skills || [], pointBudgets);
+  const normalizedSkills = applySkillDefaults(input.skills || [], { attributes: baseAttributes });
+  const skillAllocation = validateSkillPointBudgets(normalizedSkills, pointBudgets);
   const finance = deriveFinanceFromCreditRating(creditRating);
 
   return {
@@ -237,7 +239,7 @@ function createInvestigatorRecord(input, occupation, baseAttributes, creationMet
       injuriesScars: input.backstory?.injuriesScars || [],
       phobiasManias: input.backstory?.phobiasManias || []
     },
-    skills: input.skills || [],
+    skills: normalizedSkills,
     inventory: input.inventory || [],
     inventoryValidation: validation,
     inventoryAllowance: allowance,
