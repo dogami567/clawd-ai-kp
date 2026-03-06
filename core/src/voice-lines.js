@@ -71,6 +71,22 @@ function buildPreRollLine(action, adjudication) {
     ], action.intent + String(action.itemName || ""));
   }
 
+  if (action.kind === "steal") {
+    return pickBySeed([
+      "行，你这手要是真伸过去，我就替你看他会不会立刻察觉。",
+      "好嘛，偷是吧，那我先替你摸一下这口险。",
+      "来，这一下不光看你手快不快，还看他兜里那点东西认不认你。"
+    ], action.intent + String(action.targetItem || ""));
+  }
+
+  if (action.kind === "follow") {
+    return pickBySeed([
+      "行，那我看你这回能不能跟住他。",
+      "好，跟踪是吧，我先看他会不会忽然回头。",
+      "来，我替你看看你这脚步能不能压住。"
+    ], action.intent + String(action.targetNpc || ""));
+  }
+
   if (action.mode === "hidden") {
     return pickBySeed([
       "这个我先替你暗里掷一下。",
@@ -121,7 +137,7 @@ function buildPostRollLine(action, event) {
 
 function buildNarrativeLine(action, event) {
   if (!event?.outcome?.narrative) return null;
-  if (action.kind === "talk" && event.contentEffects?.intelLine) {
+  if (["talk", "steal", "follow"].includes(action.kind) && event.contentEffects?.intelLine) {
     return event.contentEffects.intelLine;
   }
   if (action.kind === "use_item" && event.contentEffects?.revealedClues?.length) {

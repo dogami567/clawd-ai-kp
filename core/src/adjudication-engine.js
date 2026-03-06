@@ -14,6 +14,8 @@ function chooseDifficulty(riskLevel, leverageScore) {
 function chooseFailForward(riskLevel, actionKind) {
   if (actionKind === "talk") return "relationship";
   if (actionKind === "use_item") return "resource";
+  if (actionKind === "steal") return "exposure";
+  if (actionKind === "follow") return "exposure";
   if (riskLevel === "high") return "exposure";
   if (riskLevel === "extreme") return "time";
   return "misinfo";

@@ -137,7 +137,7 @@ function submitAction(sessionState, action, randomInt) {
     };
   }
 
-  if (["explore", "talk", "use_item", "risky_action"].includes(action.kind)) {
+  if (["explore", "talk", "use_item", "risky_action", "steal", "follow"].includes(action.kind)) {
     const actor = sessionState.investigators[action.actorId];
     if (!actor) {
       throw new Error(`Investigator not found: ${action.actorId}`);

@@ -51,6 +51,18 @@ function applyContentEffects(sessionState, action, success, successLevel) {
     }
   }
 
+  if (action.kind === "steal" && action.targetNpc && action.targetItem) {
+    effects.intelLine = success
+      ? `你手指一勾，${action.targetItem} 还真让你带出来了。`
+      : `你这一下没偷利索，${action.targetNpc} 像是已经觉出点不对。`;
+  }
+
+  if (action.kind === "follow" && action.targetNpc) {
+    effects.intelLine = success
+      ? `${action.targetNpc} 还没察觉你，路线倒是让你看了个七七八八。`
+      : `${action.targetNpc} 走到半路忽然慢了一下，像是已经闻到后面有人了。`;
+  }
+
   return effects;
 }
 
