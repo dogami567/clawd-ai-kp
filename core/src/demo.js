@@ -83,16 +83,37 @@ function runDemo() {
     { id: "npc-001", name: "狂信徒", attitude: "hostile", status: "active" }
   ]);
 
+  const target = createInvestigatorFromQuickFire({
+    id: "pc-target-001",
+    name: "梁夜",
+    age: 33,
+    occupationKey: "veteran",
+    creditRating: 15,
+    persona: "受雇护卫",
+    motivation: "挡住所有可疑人物",
+    era: "depression_era_1920s",
+    luck: 50,
+    attributeAssignments: { STR: 60, CON: 70, DEX: 50, APP: 40, POW: 50, INT: 80, SIZ: 60, EDU: 50 },
+    skills: [
+      { key: "Dodge", interestPointsSpent: 10, value: 35 },
+      { key: "Fighting", occupationPointsSpent: 20, interestPointsSpent: 10, value: 55 }
+    ],
+    inventory: []
+  });
+  registerInvestigator(session, target);
+
   const combat = resolveCombatRound(
     session,
     {
       actorId: investigator.id,
+      targetActorId: target.id,
       attackSkill: "Fighting",
       attackValue: investigator.skills.find((item) => item.key === "Fighting").value,
       defendSkill: "Dodge",
-      defendValue: 40,
-      baseDamage: 3,
-      damageBonus: 0
+      defendValue: target.skills.find((item) => item.key === "Dodge").value,
+      defenseMode: "dodge",
+      baseDamage: "1D6+1",
+      damageBonusText: investigator.resources.damageBonusText
     },
     random
   );

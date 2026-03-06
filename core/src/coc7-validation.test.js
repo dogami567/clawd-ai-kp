@@ -114,11 +114,49 @@ function testDelayedFollowAlert() {
   assert.equal(escalated.triggered.some((item) => item.effect === "reinforcements_arrive"), true);
 }
 
+function testCombatDamageAndMajorWounds() {
+  const session = startSessionApi({ sessionId: "combat-major-wound", summary: "战斗测试", location: "病院走廊" });
+  const actor = buildCharacter({
+    skills: [
+      { key: "Fighting", occupationPointsSpent: 15, interestPointsSpent: 15, value: 55 },
+      { key: "Dodge", interestPointsSpent: 10, value: 45 }
+    ]
+  });
+  const target = buildCharacter({
+    id: "pc-target-001",
+    name: "韩朔",
+    skills: [{ key: "Dodge", interestPointsSpent: 5, value: 40 }]
+  });
+
+  addInvestigator(session, actor);
+  addInvestigator(session, target);
+  submitAction(session, { kind: "start_combat", enemies: [] });
+
+  const result = submitAction(session, {
+    kind: "combat_round",
+    actorId: actor.id,
+    targetActorId: target.id,
+    attackSkill: "Fighting",
+    attackValue: 55,
+    defendSkill: "Dodge",
+    defendValue: 40,
+    defenseMode: "dodge",
+    baseDamage: "1D6+1",
+    damageBonusText: "+1D4"
+  }, scriptedRandom([12, 70, 6, 4]));
+
+  assert.equal(result.event.winner, "actor");
+  assert.ok(Number.isInteger(result.event.damage));
+  assert.ok(result.event.damage >= 1);
+  assert.equal(target.status.majorWound, result.event.damage >= Math.floor(target.resources.hpMax / 2));
+}
+
 function run() {
   testSkillBudgetValidation();
   testCreditRatingValidation();
   testDelayedStealConsequences();
   testDelayedFollowAlert();
+  testCombatDamageAndMajorWounds();
   console.log("coc7-validation.test.js passed");
 }
 

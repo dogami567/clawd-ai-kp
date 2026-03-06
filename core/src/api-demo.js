@@ -72,8 +72,10 @@ function runApiDemo() {
     attackValue: 55,
     defendSkill: "Dodge",
     defendValue: 40,
-    baseDamage: 2,
-    damageBonus: 0
+    defenseMode: "fight_back",
+    baseDamage: "1D4+1",
+    damageBonusText: investigator.resources.damageBonusText,
+    counterBaseDamage: "1D3"
   }, random);
 
   const action4 = submitAction(session, {

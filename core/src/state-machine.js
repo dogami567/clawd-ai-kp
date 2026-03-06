@@ -1,4 +1,5 @@
 const { runCheck, runOpposedCheck } = require("./check-engine");
+const { rollFormula, normalizeDamageFormula, applyDamage } = require("./combat-rules");
 
 let checkSequence = 0;
 
@@ -346,15 +347,38 @@ function resolveCombatRound(sessionState, action, randomInt) {
   );
 
   const winner = runOpposedCheck(actorCheck, defendCheck);
+  const target = action.targetActorId ? sessionState.investigators[action.targetActorId] : null;
+  const damageFormula = normalizeDamageFormula(action.baseDamage || 1, action.damageBonusText ?? actor.resources?.damageBonusText ?? "0");
   let summary;
+  let damage = null;
+  let damageRoll = null;
+  let damageApplied = null;
 
   if (winner === "actor") {
-    const damage = Math.max(1, (action.baseDamage || 1) + (action.damageBonus || 0));
-    summary = `攻击命中，造成 ${damage} 点伤害。`;
+    damageRoll = rollFormula(damageFormula, randomInt);
+    damage = Math.max(1, damageRoll.total);
+    if (target) {
+      damageApplied = applyDamage(target, damage);
+      summary = `攻击命中，造成 ${damage} 点伤害。`;
+      if (damageApplied.majorWound) summary += " 这一下已经构成重大伤。";
+      if (damageApplied.dying) summary += " 对方被打到濒死。";
+    } else {
+      summary = `攻击命中，造成 ${damage} 点伤害。`;
+    }
   } else if (winner === "opponent") {
-    summary = "对手成功防御，未造成伤害。";
+    if (action.defenseMode === "fight_back") {
+      const counterFormula = normalizeDamageFormula(action.counterBaseDamage || 1, action.counterDamageBonusText || "0");
+      damageRoll = rollFormula(counterFormula, randomInt);
+      damage = Math.max(1, damageRoll.total);
+      damageApplied = applyDamage(actor, damage);
+      summary = `对手成功反击，反过来打了你 ${damage} 点伤害。`;
+      if (damageApplied.majorWound) summary += " 这一下也已经构成重大伤。";
+      if (damageApplied.dying) summary += " 你已经被打到濒死。";
+    } else {
+      summary = "对手成功闪避，未造成伤害。";
+    }
   } else {
-    summary = "双方僵持，本轮未分胜负。";
+    summary = action.defenseMode === "fight_back" ? "双方都扑了个空，场面一时僵住。" : "双方僵持，本轮未分胜负。";
   }
 
   const event = {
@@ -363,7 +387,12 @@ function resolveCombatRound(sessionState, action, randomInt) {
     actorLevel: actorCheck.result.successLevel,
     defendRoll: defendCheck.roll,
     defendLevel: defendCheck.result.successLevel,
+    defenseMode: action.defenseMode || "dodge",
     winner,
+    damageFormula,
+    damageRoll,
+    damage,
+    damageApplied,
     summary
   };
 
