@@ -40,6 +40,12 @@ function buildPreRollLine(action, adjudication) {
 }
 
 function buildAdjudicationBonusLine(action, adjudication) {
+  if ((action.narrativeBonus ?? 0) >= 1 && action.kind === "talk") {
+    return "你这段不是在堆字，是真的往他软处递了，我给你放松一点。";
+  }
+  if ((action.narrativeBonus ?? 0) >= 1 && action.kind === "explore") {
+    return "你这下不是瞎摸，是顺着现场留下来的气味在找，我让它更好撬一点。";
+  }
   if ((action.leverageScore ?? 0) >= 2 && action.kind === "talk") {
     return "这话递得蛮会挑地方，我给你往顺里放一点。";
   }

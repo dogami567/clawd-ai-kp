@@ -46,7 +46,8 @@ function buildNextPrompt(actionKind, success, riskLevel) {
 }
 
 function adjudicateAction(sessionState, actor, action) {
-  const leverageScore = Math.max(0, Math.min(3, action.leverageScore ?? 1));
+  const narrativeBonus = Math.max(0, Math.min(2, action.narrativeBonus ?? 0));
+  const leverageScore = Math.max(0, Math.min(3, (action.leverageScore ?? 1) + narrativeBonus));
   const riskLevel = action.riskLevel || "medium";
   const impact = clampImpact(action.impactScore ?? leverageScore);
   const needsCheck = action.needsCheck ?? Boolean(action.skillKey || action.riskLevel === "high" || action.riskLevel === "extreme");
@@ -66,6 +67,8 @@ function adjudicateAction(sessionState, actor, action) {
     needsCheck,
     difficulty,
     failForward,
+    leverageScore,
+    narrativeBonus,
     skillKey: action.skillKey,
     nextPrompt: buildNextPrompt(action.kind, false, riskLevel)
   };

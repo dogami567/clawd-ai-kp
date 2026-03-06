@@ -17,6 +17,7 @@ const {
   buildPostRollLine,
   buildNarrativeLine
 } = require("./voice-lines");
+const { applyStateChanges, buildStateChanges } = require("./state-effects");
 
 function createCharacter(input) {
   return createInvestigatorFromQuickFire(input);
@@ -93,8 +94,12 @@ function buildAdjudicationResponse(sessionState, actor, action, randomInt) {
     basis: adjudication.basis,
     impact: adjudication.impact,
     duration: adjudication.duration,
-    balanceNote: adjudication.balanceNote
+    balanceNote: adjudication.balanceNote,
+    leverageScore: adjudication.leverageScore,
+    narrativeBonus: adjudication.narrativeBonus
   };
+  event.outcome.stateChanges = buildStateChanges(action, adjudication, event.result.success);
+  applyStateChanges(sessionState, event.outcome.stateChanges);
   event.outcome.nextPrompt = buildOutcomePrompt(action, event.result.success, adjudication);
 
   return {
