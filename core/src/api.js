@@ -10,6 +10,13 @@ const {
 } = require("./state-machine");
 const { createInvestigatorFromQuickFire } = require("./character-creation");
 const { adjudicateAction } = require("./adjudication-engine");
+const {
+  buildWarningLine,
+  buildPreRollLine,
+  buildAdjudicationBonusLine,
+  buildPostRollLine,
+  buildNarrativeLine
+} = require("./voice-lines");
 
 function createCharacter(input) {
   return createInvestigatorFromQuickFire(input);
@@ -44,11 +51,19 @@ function addInvestigator(sessionState, investigator) {
 
 function buildAdjudicationResponse(sessionState, actor, action, randomInt) {
   const adjudication = adjudicateAction(sessionState, actor, action);
+  const warningLine = buildWarningLine(action);
+  const adjudicationBonusLine = buildAdjudicationBonusLine(action, adjudication);
+  const preRollLine = buildPreRollLine(action, adjudication);
 
   if (!adjudication.needsCheck) {
     return {
       kind: action.kind,
       adjudication,
+      warningLine,
+      adjudicationBonusLine,
+      preRollLine,
+      postRollLine: null,
+      narrativeLine: action.onDirectSuccess || "行，这一下直接成了，场面往前走。",
       event: {
         outcome: {
           narrative: action.onDirectSuccess || "行动直接生效，局势向前推进。",
@@ -85,6 +100,11 @@ function buildAdjudicationResponse(sessionState, actor, action, randomInt) {
   return {
     kind: action.kind,
     adjudication,
+    warningLine,
+    adjudicationBonusLine,
+    preRollLine,
+    postRollLine: buildPostRollLine(action, event),
+    narrativeLine: buildNarrativeLine(action, event),
     event
   };
 }
