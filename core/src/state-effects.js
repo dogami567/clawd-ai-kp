@@ -135,6 +135,26 @@ function buildStateChanges(action, adjudication, success) {
     }
   }
 
+  if (action.kind === "steal") {
+    changes.push({ path: "scene.timeState.timelineMinute", op: "inc", value: success ? 1 : 2 });
+    if (!success) {
+      changes.push({ path: "scene.threats.exposure", op: "inc", value: 2 });
+      if (action.targetNpc) {
+        changes.push({ path: "scene.npcAttitude", op: "shift", npcId: action.targetNpc, value: -1 });
+      }
+    }
+  }
+
+  if (action.kind === "follow") {
+    changes.push({ path: "scene.timeState.timelineMinute", op: "inc", value: success ? 10 : 5 });
+    if (!success) {
+      changes.push({ path: "scene.threats.exposure", op: "inc", value: 1 });
+      if (action.targetNpc) {
+        changes.push({ path: "scene.npcAttitude", op: "shift", npcId: action.targetNpc, value: -1 });
+      }
+    }
+  }
+
   return changes;
 }
 

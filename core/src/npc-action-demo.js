@@ -31,7 +31,7 @@ function runNpcActionDemo() {
     inventory: [{ name: "薄手套", category: "tool", quantity: 1 }]
   });
   addInvestigator(session, investigator);
-  session.scene.participants.npcs.push({ id: "gravedigger", name: "守墓人", attitude: "neutral", trust: 0, status: "active" });
+  session.scene.participants.npcs.push({ id: "gravedigger", name: "守墓人", attitude: "neutral", trust: 0, status: "active", items: ["钥匙串", "皱烟盒", "零钱"] });
   const random = scriptedRandom([61, 32]);
 
   const steal = submitAction(session, buildStealActionFromNpcCard({ actorId: investigator.id, npcId: "gravedigger", itemName: "钥匙串" }), random);

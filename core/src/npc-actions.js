@@ -37,6 +37,7 @@ function buildFollowActionFromNpcCard({ actorId, npcId, skillKey = "Stealth" }) 
     riskLevel: difficultyToRiskLevel(card.behavior.followDifficulty),
     impactScore: 2,
     leverageScore: 1,
+    routineHints: card.behavior.routine || [],
     failureEventLabel: `${card.name} 半路像是察觉到了什么，开始变得更警惕`
   };
 }

@@ -30,10 +30,21 @@ function buildTalkIntel(action, success, successLevel) {
   return action.intelLine || fallback;
 }
 
+function removeNpcItem(sessionState, npcId, itemName) {
+  const npc = (sessionState.scene.participants.npcs || []).find((item) => item.id === npcId || item.name === npcId);
+  if (!npc) return false;
+  npc.items = Array.isArray(npc.items) ? npc.items : [];
+  if (!npc.items.includes(itemName)) return false;
+  npc.items = npc.items.filter((item) => item !== itemName);
+  return true;
+}
+
 function applyContentEffects(sessionState, action, success, successLevel) {
   const effects = {
     revealedClues: [],
-    intelLine: null
+    intelLine: null,
+    routeLine: null,
+    stolenItem: null
   };
 
   if (action.kind === "talk") {
@@ -55,12 +66,20 @@ function applyContentEffects(sessionState, action, success, successLevel) {
     effects.intelLine = success
       ? `你手指一勾，${action.targetItem} 还真让你带出来了。`
       : `你这一下没偷利索，${action.targetNpc} 像是已经觉出点不对。`;
+    if (success) {
+      effects.stolenItem = action.targetItem;
+      removeNpcItem(sessionState, action.targetNpc, action.targetItem);
+    }
   }
 
   if (action.kind === "follow" && action.targetNpc) {
     effects.intelLine = success
       ? `${action.targetNpc} 还没察觉你，路线倒是让你看了个七七八八。`
       : `${action.targetNpc} 走到半路忽然慢了一下，像是已经闻到后面有人了。`;
+    if (success && Array.isArray(action.routineHints) && action.routineHints.length) {
+      effects.routeLine = action.routineHints.join("；");
+      effects.intelLine = `${effects.intelLine} 你看见他大概是这样走的：${effects.routeLine}`;
+    }
   }
 
   return effects;
