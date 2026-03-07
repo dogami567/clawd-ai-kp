@@ -19,6 +19,7 @@ const { adjudicateAction } = require("./adjudication-engine");
 const { WEAPON_TABLE, getWeaponProfile, buildCombatActionFromWeapon } = require("./weapon-table");
 const { createSessionSnapshot, serializeSessionSnapshot, parseSessionSnapshot, saveSessionState, loadSessionState, loadSessionSnapshot } = require("./session-storage");
 const { validateInvestigatorCard, validateSceneState, validateCheckEvent, validateSessionState } = require("./schema-validation");
+const { loadSceneTemplate, buildNpcRuntimeFromCard, buildScenarioNpcs, applySceneTemplate, seedSessionFromScenario } = require("./scene-loader");
 
 module.exports = {
   createSession,
@@ -63,5 +64,10 @@ module.exports = {
   validateInvestigatorCard,
   validateSceneState,
   validateCheckEvent,
-  validateSessionState
+  validateSessionState,
+  loadSceneTemplate,
+  buildNpcRuntimeFromCard,
+  buildScenarioNpcs,
+  applySceneTemplate,
+  seedSessionFromScenario
 };

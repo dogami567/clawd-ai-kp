@@ -26,10 +26,10 @@ function buildDemoInvestigator() {
     creditRating: 25,
     attributeAssignments: { STR: 50, CON: 60, DEX: 60, APP: 50, POW: 70, INT: 80, SIZ: 40, EDU: 50 },
     skills: [
-      { key: "Persuade", value: 60, tag: "social" },
-      { key: "Charm", value: 55, tag: "social" },
-      { key: "Intimidate", value: 35, tag: "social" },
-      { key: "Credit Rating", value: 25, tag: "social" }
+      { key: "Persuade", value: 60, baseValue: 10, occupationPointsSpent: 25, interestPointsSpent: 25, tag: "social" },
+      { key: "Charm", value: 55, baseValue: 15, occupationPointsSpent: 20, interestPointsSpent: 20, tag: "social" },
+      { key: "Intimidate", value: 35, baseValue: 15, occupationPointsSpent: 10, interestPointsSpent: 10, tag: "social" },
+      { key: "Credit Rating", value: 25, baseValue: 0, occupationPointsSpent: 25, interestPointsSpent: 0, tag: "social" }
     ],
     inventory: [{ name: "名片夹", category: "tool", quantity: 1 }]
   });

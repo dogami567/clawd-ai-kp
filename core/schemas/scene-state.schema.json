@@ -160,7 +160,11 @@
       "additionalProperties": false,
       "properties": {
         "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "scenarioId": { "type": "string" },
+        "scenarioTitle": { "type": "string" },
+        "opening": { "type": "string" },
+        "starterPrompts": { "type": "array", "items": { "type": "string" } }
       }
     }
   }

@@ -1,4 +1,4 @@
-const { createCharacter, startSessionApi, addInvestigator, submitAction, getState } = require("./index");
+const { createCharacter, startSessionApi, addInvestigator, submitAction, getState, loadSceneTemplate } = require("./index");
 
 function scriptedRandom(values) {
   let index = 0;
@@ -11,23 +11,9 @@ function scriptedRandom(values) {
   };
 }
 
-function seedChurchScene(session) {
-  session.scene.summary = "夜探旧教堂";
-  session.scene.location = "河谷旧教堂";
-  session.scene.clues = [
-    { id: "clue-wall-symbol", title: "墙上的旧符号", kind: "optional", quality: "partial", revealed: false, source: "scene" },
-    { id: "clue-altar-slot", title: "祭坛下方的细长槽口", kind: "core", quality: "partial", revealed: false, source: "scene" }
-  ];
-  session.scene.events = [
-    { id: "evt-bell", label: "钟楼方向昨晚响过不该响的声音", triggered: false },
-    { id: "evt-awake", label: "教堂深处有东西苏醒", triggered: false }
-  ];
-  session.scene.participants.npcs.push({ id: "gravedigger", name: "守墓人", attitude: "neutral", trust: 0, status: "active" });
-}
-
 function runSceneDemo() {
-  const session = startSessionApi({ sessionId: "scene-demo-001", summary: "夜探旧教堂", location: "河谷旧教堂" });
-  seedChurchScene(session);
+  const scenario = loadSceneTemplate("old-church-night");
+  const session = startSessionApi({ sessionId: "scene-demo-001", scenarioId: "old-church-night" });
 
   const investigator = createCharacter({
     id: "pc-scene-001",
@@ -40,10 +26,10 @@ function runSceneDemo() {
     luck: 60,
     attributeAssignments: { STR: 40, CON: 50, DEX: 60, APP: 70, POW: 60, INT: 80, SIZ: 50, EDU: 50 },
     skills: [
-      { key: "Spot Hidden", value: 65, tag: "investigation" },
-      { key: "Persuade", value: 60, tag: "social" },
-      { key: "Psychology", value: 50, tag: "investigation" },
-      { key: "Fighting", value: 35, tag: "action" }
+      { key: "Spot Hidden", value: 65, baseValue: 25, occupationPointsSpent: 20, interestPointsSpent: 20, tag: "investigation" },
+      { key: "Persuade", value: 60, baseValue: 10, occupationPointsSpent: 25, interestPointsSpent: 25, tag: "social" },
+      { key: "Psychology", value: 50, baseValue: 10, occupationPointsSpent: 20, interestPointsSpent: 20, tag: "investigation" },
+      { key: "Fighting", value: 35, baseValue: 25, occupationPointsSpent: 0, interestPointsSpent: 10, tag: "action" }
     ],
     inventory: [
       { name: "手电", category: "tool", quantity: 1 },
@@ -119,8 +105,8 @@ function runSceneDemo() {
 
   return {
     intro: {
-      title: "夜探旧教堂",
-      opening: "门一推开，灰就往下落。月光斜斜压在发黑的祭坛上，屋里有一股潮木头和旧布混在一起的味。你知道这里昨晚出过事，而且守墓人现在就在右边廊口盯着你。"
+      title: scenario.title,
+      opening: scenario.opening
     },
     steps: [step1, step2, step3, step4],
     state: getState(session)

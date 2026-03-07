@@ -1,0 +1,40 @@
+{
+  "id": "old-church-night",
+  "title": "夜探旧教堂",
+  "opening": "门一推开，灰就往下落。月光斜斜压在发黑的祭坛上，屋里有一股潮木头和旧布混在一起的味。你知道这里昨晚出过事，而且守墓人现在就在右边廊口盯着你。",
+  "summary": "夜探旧教堂",
+  "location": "河谷旧教堂",
+  "sceneType": "investigation",
+  "threats": {
+    "exposure": 0,
+    "pressure": 0,
+    "dangerLevel": "low"
+  },
+  "clues": [
+    { "id": "clue-wall-symbol", "title": "墙上的旧符号", "kind": "optional", "quality": "partial", "revealed": false, "source": "scene" },
+    { "id": "clue-altar-slot", "title": "祭坛下方的细长槽口", "kind": "core", "quality": "partial", "revealed": false, "source": "scene" },
+    { "id": "clue-altar-scratch", "title": "祭坛背后的异常刮痕", "kind": "core", "quality": "partial", "revealed": false, "source": "scene" }
+  ],
+  "events": [
+    { "id": "evt-bell", "label": "钟楼方向昨晚响过不该响的声音", "triggered": false },
+    { "id": "evt-awake", "label": "教堂深处有东西苏醒", "triggered": false }
+  ],
+  "nextOptions": [
+    { "id": "check-spot", "label": "侦查祭坛与墙面", "type": "investigate" },
+    { "id": "check-talk", "label": "试着撬守墓人的口", "type": "talk" },
+    { "id": "check-risk", "label": "冒险掀开祭坛下方木板", "type": "other" }
+  ],
+  "npcRefs": [
+    {
+      "id": "gravedigger",
+      "trust": 0,
+      "status": "active"
+    }
+  ],
+  "starterPrompts": [
+    "我借着手电去看祭坛背后的刮痕。",
+    "我先安抚守墓人，再把话慢慢引到昨晚的钟声上。",
+    "我用素描本把墙上的符号临下来，再和朋友留下的图样对照。",
+    "我直接把祭坛下面那块木板掀开。"
+  ]
+}

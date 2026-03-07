@@ -45,8 +45,7 @@ function runApiDemo() {
 
   const session = startSessionApi({
     sessionId: "api-demo-001",
-    summary: "深夜公寓失踪案",
-    location: "河岸公寓"
+    scenarioId: "old-church-night"
   });
 
   const join = addInvestigator(session, investigator);

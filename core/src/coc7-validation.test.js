@@ -250,6 +250,16 @@ function testSettlementSummaryIncludesSceneAftermath() {
   assert.equal(settlement.summaryLines.some((line) => line.includes('核心线索')), true);
 }
 
+function testScenarioTemplateSeeding() {
+  const session = startSessionApi({ sessionId: 'scenario-seeding', scenarioId: 'old-church-night' });
+  assert.equal(session.scene.summary, '夜探旧教堂');
+  assert.equal(session.scene.location, '河谷旧教堂');
+  assert.equal(session.scene.clues.length >= 3, true);
+  assert.equal(session.scene.participants.npcs[0].id, 'gravedigger');
+  assert.equal(session.scene.meta.scenarioId, 'old-church-night');
+  assert.equal(Array.isArray(session.scene.meta.starterPrompts), true);
+}
+
 function run() {
   testSkillBudgetValidation();
   testCreditRatingValidation();
@@ -261,6 +271,7 @@ function run() {
   testPenaltyDiceChoosesWorseRoll();
   testSessionStorageRoundTrip();
   testSettlementSummaryIncludesSceneAftermath();
+  testScenarioTemplateSeeding();
   console.log("coc7-validation.test.js passed");
 }
 

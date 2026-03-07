@@ -24,9 +24,9 @@ function runVoiceDemo() {
     luck: 60,
     attributeAssignments: { STR: 40, CON: 50, DEX: 60, APP: 70, POW: 60, INT: 80, SIZ: 50, EDU: 50 },
     skills: [
-      { key: "Spot Hidden", value: 65, tag: "investigation" },
-      { key: "Persuade", value: 60, tag: "social" },
-      { key: "Fighting", value: 35, tag: "action" }
+      { key: "Spot Hidden", value: 65, baseValue: 25, occupationPointsSpent: 20, interestPointsSpent: 20, tag: "investigation" },
+      { key: "Persuade", value: 60, baseValue: 10, occupationPointsSpent: 25, interestPointsSpent: 25, tag: "social" },
+      { key: "Fighting", value: 35, baseValue: 25, occupationPointsSpent: 0, interestPointsSpent: 10, tag: "action" }
     ],
     inventory: [{ name: "手电", category: "tool", quantity: 1 }]
   });

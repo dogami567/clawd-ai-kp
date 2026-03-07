@@ -23,6 +23,7 @@ const { applyContentEffects } = require("./content-effects");
 const { buildCombatActionFromWeapon } = require("./weapon-table");
 const { saveSessionState, loadSessionState, loadSessionSnapshot } = require("./session-storage");
 const { validateInvestigatorCard, validateSessionState } = require("./schema-validation");
+const { seedSessionFromScenario } = require("./scene-loader");
 
 function createCharacter(input) {
   const investigator = createInvestigatorFromQuickFire(input);
@@ -42,6 +43,10 @@ function startSessionApi(input = {}) {
       summary: input.summary || "调查开始",
       location: input.location || "未知地点"
     });
+  }
+
+  if (input.scenarioId) {
+    seedSessionFromScenario(session, input.scenarioId);
   }
 
   validateSessionState(session);

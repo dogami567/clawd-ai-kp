@@ -104,8 +104,9 @@ node core/src/coc7-validation.test.js
 - 动作裁定层（`explore / talk / use_item / risky_action / steal / follow`）
 - 偷窃 / 跟踪的延迟后果倒计时（失物发现、路线变化、警觉上升）
 - 单幕场景 demo（旧教堂、守墓人、祭坛、线索链、危险节点）
+- 可复用场景包：`core/data/scenes/old-church-night.scene.json`
 
 ## 下一步
-1. 把 `core/src` 封装成命令式 API（开团/入团/行动/检定/状态/结团）
-2. 接 OneBot 指令路由（先打通单群单会话）
-3. 增加 JSON Schema 校验与落盘存档
+1. 接 OneBot 指令路由（先打通单群单会话）
+2. 把场景包和玩家自然语言 action 路由接起来
+3. 继续补隐藏检定输出分层与更细的 keeper 文本组织
