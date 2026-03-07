@@ -16,7 +16,10 @@ const {
   loadCampaignTemplate,
   attachCampaignMeta,
   formatCampaignSummary,
-  getCurrentCampaign
+  getCurrentCampaign,
+  transitionCampaignScene,
+  loadStoryPackTemplate,
+  formatStoryPackSummary
 } = require("../../core/src/index");
 const { resolveSkillDefault } = require("../../core/src/skill-defaults");
 
@@ -741,6 +744,8 @@ function formatHelpReply() {
     "- /aikp sheet 查看自己的调查员卡",
     "- /aikp state 查看当前场景状态",
     "- /aikp campaign 查看当前故事弧与预留钩子",
+    "- /aikp storypack 查看当前故事包摘要",
+    "- /aikp goto <sceneId> 切到下一幕骨架场景",
     "- /aikp scene 查看场景环境面板",
     "- /aikp recap 看当前阶段总结",
     "- /aikp party 查看队伍面板",
@@ -850,6 +855,9 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
   if (text.trim() === "/aikp campaign") {
     return { reply: formatCampaignSummary(getCurrentCampaign(stateBundle.sessionState)) };
   }
+  if (text.trim() === "/aikp storypack") {
+    return { reply: formatStoryPackSummary(loadStoryPackTemplate("old-church-arc-pack")) };
+  }
   if (text.trim() === "/aikp scene") {
     return { reply: formatScenePanel(stateBundle.sessionState) };
   }
@@ -921,6 +929,18 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
     }
     const turnState = setCurrentActor(stateBundle, entry.actorId);
     return { reply: `好，现在 spotlight 切到 ${entry.investigator.name} 了（第 ${turnState.round} 轮）。` };
+  }
+
+  if (command === "/aikp" && args[0] === "goto") {
+    const targetSceneId = args[1];
+    if (!targetSceneId) {
+      return { reply: "你得给我一个 sceneId，比如 `/aikp goto bell-tower-followup`。" };
+    }
+    const campaignId = stateBundle.meta.campaignId || "old-church-arc";
+    const campaign = loadCampaignTemplate(campaignId);
+    transitionCampaignScene(stateBundle.sessionState, campaign, targetSceneId);
+    saveSessionApi(stateBundle.sessionState, stateBundle.layout.sessionFile, { meta: { conversationKey: stateBundle.layout.conversationKey } });
+    return { reply: `好，这幕我先切到 ${targetSceneId} 了。\n${formatCampaignSummary(getCurrentCampaign(stateBundle.sessionState))}` };
   }
 
   if (command === "/aikp" && args[0] === "next") {

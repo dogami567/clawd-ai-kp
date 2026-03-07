@@ -42,6 +42,23 @@ function getCurrentCampaign(sessionState) {
   return sessionState.scene?.meta?.campaign || null;
 }
 
+function transitionCampaignScene(sessionState, campaign, targetSceneId) {
+  const { loadSceneTemplate, applySceneTemplate } = require("./scene-loader");
+  const sceneTemplate = loadSceneTemplate(targetSceneId);
+  applySceneTemplate(sessionState, sceneTemplate);
+  attachCampaignMeta(sessionState, campaign);
+  sessionState.scene.meta.campaign.currentSceneId = targetSceneId;
+  sessionState.scene.meta.campaign.hooks = listCampaignHooks(campaign, targetSceneId);
+  sessionState.scene.events = sessionState.scene.events || [];
+  sessionState.scene.events.push({
+    id: `scene-transition-${Date.now()}`,
+    label: `故事推进到 ${sceneTemplate.title}`,
+    triggered: true,
+    triggerAtMinute: sessionState.scene.timeState?.timelineMinute || 0
+  });
+  return sessionState.scene.meta.campaign;
+}
+
 function formatCampaignSummary(campaignMeta) {
   if (!campaignMeta) return "当前这幕还没挂进 campaign。";
   const lines = [
@@ -65,5 +82,6 @@ module.exports = {
   buildCampaignMeta,
   attachCampaignMeta,
   getCurrentCampaign,
+  transitionCampaignScene,
   formatCampaignSummary
 };

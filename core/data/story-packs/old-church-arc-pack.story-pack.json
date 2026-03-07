@@ -1,0 +1,14 @@
+{
+  "id": "old-church-arc-pack",
+  "title": "旧教堂异响 Story Pack",
+  "campaignId": "old-church-arc",
+  "sceneIds": [
+    "old-church-night",
+    "bell-tower-followup",
+    "underchurch-aftershock"
+  ],
+  "notes": [
+    "旧教堂是样板场景；后续应优先复用 story pack/campaign 框架，而不是继续硬写单图。",
+    "下一步更重要的是导入工作流、通用 scene graph、真实消息接线。"
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "id": "underchurch-aftershock",
+  "title": "教堂深处的余震",
+  "opening": "你们刚退出来，那道拖擦声却没停，反而像沿着地板下面很慢地追了一步。现在最糟的不是你们看见了什么，而是你们已经知道下面确实有东西。",
+  "summary": "教堂深处的余震",
+  "location": "旧教堂深处 / 地下入口附近",
+  "sceneType": "investigation",
+  "threats": { "exposure": 2, "pressure": 3, "dangerLevel": "high" },
+  "atmosphere": {
+    "tone": "后果已落地、危险正在逼近",
+    "smell": ["潮土", "旧石灰", "一股更冷的霉味"],
+    "sound": ["拖擦声更近了一点", "木板底下偶尔像有硬物轻碰"],
+    "light": "光照不够用，暗处开始像在主动吞边界。"
+  },
+  "areas": [
+    { "id": "broken-floor", "name": "受惊后的祭坛周边", "description": "木板已经被惊动过，现场不再安静，继续停留只会越来越危险。", "notable": ["高危险度", "适合收集后果型线索"] }
+  ],
+  "truthLayers": [
+    "深处确实还有更坏的东西。",
+    "继续硬顶与暂时撤退，都是有效但代价不同的选择。"
+  ],
+  "endingHooks": [
+    "收束这一幕，带着后果和线索撤离。",
+    "决定再赌一次，试着找地下入口。"
+  ],
+  "clues": [
+    { "id": "clue-aftershock", "title": "被惊动后的深处回响", "kind": "core", "quality": "partial", "revealed": false, "source": "scene" }
+  ],
+  "events": [
+    { "id": "evt-aftershock-close", "label": "深处的东西不再只是远处动静了", "triggered": false }
+  ],
+  "nextOptions": [
+    { "id": "aftershock-hold", "label": "原地稳住再听一次", "type": "investigate" },
+    { "id": "aftershock-retreat", "label": "趁现在先撤出去", "type": "move" }
+  ],
+  "npcRefs": [],
+  "starterPrompts": [
+    "我先别乱动，再听一次那声音是从哪边来的。",
+    "现在不贪了，我们先撤，出去再整理。"
+  ]
+}

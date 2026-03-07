@@ -110,6 +110,18 @@ test("campaign command shows story arc hooks", () => {
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
+test("storypack and goto commands expose framework-level transitions", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  const storypack = handleOneBotMessage(makeEvent("/aikp storypack"), { storageRoot });
+  assert.equal(storypack.ok, true);
+  assert.match(storypack.reply, /Story Pack：旧教堂异响 Story Pack/);
+  const goto = handleOneBotMessage(makeEvent("/aikp goto bell-tower-followup"), { storageRoot });
+  assert.equal(goto.ok, true);
+  assert.match(goto.reply, /切到 bell-tower-followup/);
+  assert.match(goto.reply, /当前场景：bell-tower-followup/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
 test("scene and recap commands show environment and stage summary", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });

@@ -1,0 +1,44 @@
+{
+  "id": "bell-tower-followup",
+  "title": "钟楼余响",
+  "opening": "钟楼门板旧得发涩，木阶往上盘着黑。你们一靠近，就会忍不住先抬头去听——上面不像空着。",
+  "summary": "钟楼余响",
+  "location": "旧教堂钟楼",
+  "sceneType": "investigation",
+  "threats": { "exposure": 1, "pressure": 1, "dangerLevel": "medium" },
+  "atmosphere": {
+    "tone": "压抑、狭窄、越往上越不安",
+    "smell": ["陈年木灰", "潮气", "一点霉味"],
+    "sound": ["木阶轻微回响", "高处不知哪来的轻碰声"],
+    "light": "楼梯口暗得更实，月光只能勉强挤进来一点。"
+  },
+  "areas": [
+    { "id": "stairs", "name": "旧木楼梯", "description": "每走一步都可能出声，越往上越难判断声音是不是你自己踩出来的。", "notable": ["高噪音风险", "容易惊动上层"] },
+    { "id": "bell-room", "name": "钟室", "description": "钟绳和钟架都很旧，角落里还有被人翻动过的痕迹。", "notable": ["翻找痕迹", "潜在下一层线索"] }
+  ],
+  "truthLayers": [
+    "昨晚确实有人上过钟楼。",
+    "钟楼不是终点，而是往更深处或更旧秘密的中转层。"
+  ],
+  "endingHooks": [
+    "继续往地下或教堂深处追。",
+    "带着钟楼证据返回镇上对照失踪案。"
+  ],
+  "clues": [
+    { "id": "clue-bell-rope", "title": "被动过的钟绳", "kind": "core", "quality": "partial", "revealed": false, "source": "scene" },
+    { "id": "clue-tower-dust", "title": "钟室角落的翻动痕迹", "kind": "optional", "quality": "partial", "revealed": false, "source": "scene" }
+  ],
+  "events": [
+    { "id": "evt-tower-presence", "label": "钟楼里还有人来过的余波", "triggered": false }
+  ],
+  "nextOptions": [
+    { "id": "tower-investigate", "label": "检查钟绳与钟架", "type": "investigate" },
+    { "id": "tower-listen", "label": "停下脚步先听上面的动静", "type": "investigate" },
+    { "id": "tower-search", "label": "翻钟室角落", "type": "other" }
+  ],
+  "npcRefs": [],
+  "starterPrompts": [
+    "我先停在楼梯口，听听上面是不是有动静。",
+    "我想看看钟绳有没有被人新近碰过。"
+  ]
+}
