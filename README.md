@@ -110,6 +110,7 @@ node core/src/coc7-validation.test.js
 - 可复用场景包：`core/data/scenes/old-church-night.scene.json`
 - 旧教堂场景自然语言动作路由：`core/src/scene-action-router.js`
 - OneBot 单群单会话胶水层：`adapter/onebot/single-session.js`
+- OneBot runtime 入口：`adapter/onebot/runtime.js`
 - 正式车卡流已接入 OneBot：支持单人 `/aikp roll`、`/aikp quickfire` 与批量 `/aikp party-roll`
 - 多人团状态已接入 OneBot：支持 `/aikp party`、`/aikp who`、`/aikp focus`、`/aikp next`
 - 多人团当前会显示 `round + current spotlight`，方便群里轮流推进
@@ -126,8 +127,9 @@ node core/src/coc7-validation.test.js
 - 作者格式校验已接入 loader：`core/src/authoring-validation.js`
 - Markdown 场景导入器：`core/src/scene-markdown-import.js`
 - Markdown campaign/story pack 导入器：`core/src/campaign-story-markdown-import.js`
+- OneBot runtime 已能吃原始消息事件并吐标准发送 action
 
 ## 下一步
-1. 把 `advance` 从手动推进升级成更自动的 hook/条件驱动切幕
+1. 把 `advance` 从手动推进继续升级成更自动的 hook/条件驱动切幕
 2. 把 story pack / campaign / scene 作者输入格式继续稳定下来
-3. 把这套通用框架接进真实消息链，而不是只停在 adapter 模块测试层
+3. 把 runtime 入口真正接进正式消息链，而不是只停在仓库内联调层
