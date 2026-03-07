@@ -101,6 +101,21 @@ test("returns state summary command", () => {
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
+test("scene and recap commands show environment and stage summary", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
+  const scene = handleOneBotMessage(makeEvent("/aikp scene"), { storageRoot });
+  const recap = handleOneBotMessage(makeEvent("/aikp recap"), { storageRoot });
+  assert.equal(scene.ok, true);
+  assert.match(scene.reply, /场景环境：夜探旧教堂/);
+  assert.match(scene.reply, /区域：/);
+  assert.equal(recap.ok, true);
+  assert.match(recap.reply, /阶段总结：/);
+  assert.match(recap.reply, /已得线索/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
 test("party command shows party panel and current focus", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   handleOneBotMessage(makeEvent("hello"), { storageRoot });

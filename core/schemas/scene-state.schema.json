@@ -164,7 +164,32 @@
         "scenarioId": { "type": "string" },
         "scenarioTitle": { "type": "string" },
         "opening": { "type": "string" },
-        "starterPrompts": { "type": "array", "items": { "type": "string" } }
+        "starterPrompts": { "type": "array", "items": { "type": "string" } },
+        "atmosphere": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tone": { "type": "string" },
+            "smell": { "type": "array", "items": { "type": "string" } },
+            "sound": { "type": "array", "items": { "type": "string" } },
+            "light": { "type": "string" }
+          }
+        },
+        "areas": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "description": { "type": "string" },
+              "notable": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "truthLayers": { "type": "array", "items": { "type": "string" } },
+        "endingHooks": { "type": "array", "items": { "type": "string" } }
       }
     }
   }

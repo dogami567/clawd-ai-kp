@@ -499,6 +499,43 @@ function formatPartySummary(stateBundle) {
   return lines.join("\n");
 }
 
+function formatScenePanel(sessionState) {
+  const meta = sessionState.scene?.meta || {};
+  const lines = [
+    `场景环境：${meta.scenarioTitle || sessionState.scene?.summary || "未知场景"}`
+  ];
+
+  if (meta.atmosphere?.tone) lines.push(`- 气氛：${meta.atmosphere.tone}`);
+  if (meta.atmosphere?.light) lines.push(`- 光线：${meta.atmosphere.light}`);
+  if (Array.isArray(meta.atmosphere?.smell) && meta.atmosphere.smell.length) {
+    lines.push(`- 气味：${meta.atmosphere.smell.join("、")}`);
+  }
+  if (Array.isArray(meta.atmosphere?.sound) && meta.atmosphere.sound.length) {
+    lines.push(`- 声音：${meta.atmosphere.sound.join("、")}`);
+  }
+  if (Array.isArray(meta.areas) && meta.areas.length) {
+    lines.push("- 区域：");
+    for (const area of meta.areas) {
+      lines.push(`  - ${area.name}：${area.description}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function formatRecapReply(sessionState) {
+  const revealedClues = (sessionState.scene?.clues || []).filter((item) => item.revealed).map((item) => item.title);
+  const triggeredEvents = (sessionState.scene?.events || []).filter((item) => item.triggered).map((item) => item.label);
+  const endingHooks = sessionState.scene?.meta?.endingHooks || [];
+  const lines = ["阶段总结："];
+  lines.push(`- 已推进到 ${sessionState.scene?.timeState?.timelineMinute || 0} 分钟，危险等级 ${sessionState.scene?.threats?.dangerLevel || "low"}`);
+  lines.push(`- 已得线索：${revealedClues.length ? revealedClues.join("、") : "暂时还少关键明线"}`);
+  lines.push(`- 已触发事件：${triggeredEvents.length ? triggeredEvents.join("、") : "目前还没炸出大事"}`);
+  if (endingHooks.length) {
+    lines.push(`- 这幕后面最可能走向：${endingHooks.join(" / ")}`);
+  }
+  return lines.join("\n");
+}
+
 function formatCluePanel(sessionState) {
   const clues = Array.isArray(sessionState.scene?.clues) ? sessionState.scene.clues : [];
   const revealed = clues.filter((item) => item.revealed);
@@ -693,6 +730,8 @@ function formatHelpReply() {
     "- /aikp join 确认当前调查员",
     "- /aikp sheet 查看自己的调查员卡",
     "- /aikp state 查看当前场景状态",
+    "- /aikp scene 查看场景环境面板",
+    "- /aikp recap 看当前阶段总结",
     "- /aikp party 查看队伍面板",
     "- /aikp clues 查看线索面板",
     "- /aikp npcs 查看 NPC 面板",
@@ -796,6 +835,12 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
 
   if (text.trim() === "/aikp state") {
     return { reply: formatStateSummary(stateBundle.sessionState, stateBundle.meta) };
+  }
+  if (text.trim() === "/aikp scene") {
+    return { reply: formatScenePanel(stateBundle.sessionState) };
+  }
+  if (text.trim() === "/aikp recap") {
+    return { reply: formatRecapReply(stateBundle.sessionState) };
   }
   if (text.trim() === "/aikp party") {
     return { reply: formatPartySummary(stateBundle) };
@@ -963,6 +1008,8 @@ module.exports = {
   ensureConversationSession,
   ensureActorForUser,
   formatStateSummary,
+  formatScenePanel,
+  formatRecapReply,
   formatPartySummary,
   formatCluePanel,
   formatNpcPanel,

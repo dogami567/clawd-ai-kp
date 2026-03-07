@@ -56,7 +56,11 @@ function applySceneTemplate(sessionState, template) {
     scenarioId: template.id,
     scenarioTitle: template.title,
     opening: template.opening,
-    starterPrompts: cloneJson(template.starterPrompts || [])
+    starterPrompts: cloneJson(template.starterPrompts || []),
+    atmosphere: cloneJson(template.atmosphere || {}),
+    areas: cloneJson(template.areas || []),
+    truthLayers: cloneJson(template.truthLayers || []),
+    endingHooks: cloneJson(template.endingHooks || [])
   };
   return sessionState;
 }
