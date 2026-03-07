@@ -1,0 +1,34 @@
+{
+  "id": "old-church-arc",
+  "title": "旧教堂异响",
+  "summary": "以旧教堂为起点的调查弧线，用来验证 AI-KP 的单幕到多幕衔接能力。",
+  "startSceneId": "old-church-night",
+  "scenes": [
+    {
+      "sceneId": "old-church-night",
+      "title": "夜探旧教堂",
+      "phase": "act-1",
+      "purpose": "让玩家摸到祭坛、钟楼、守墓人和深处异动之间的关系。",
+      "hooks": [
+        {
+          "id": "withdraw-with-clues",
+          "label": "带着线索撤出，准备查钟楼或失踪者主线",
+          "targetSceneId": "bell-tower-followup",
+          "status": "planned"
+        },
+        {
+          "id": "take-key-evidence",
+          "label": "拿到钥匙或相关证据，进入下一幕",
+          "targetSceneId": "bell-tower-followup",
+          "status": "planned"
+        },
+        {
+          "id": "retreat-after-awakening",
+          "label": "惊醒深处之物后撤退，但真相更近一步",
+          "targetSceneId": "underchurch-aftershock",
+          "status": "planned"
+        }
+      ]
+    }
+  ]
+}

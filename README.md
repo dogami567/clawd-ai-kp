@@ -116,6 +116,7 @@ node core/src/coc7-validation.test.js
 - OneBot 现在还有独立 `线索面板 / NPC 面板 / 场景环境面板 / 阶段总结`
 - 行动回包已开始带 `状态变化 / 场上此刻 / 可选下一步 / 当前 spotlight` 的收尾句
 - 旧教堂正式单幕稿：`docs/old-church-night-final-v0.1.md`
+- Campaign 骨架已落地：`core/data/campaigns/old-church-arc.campaign.json`
 
 ## 下一步
 1. 接 OneBot 指令路由（先打通单群单会话）

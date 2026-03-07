@@ -1,6 +1,7 @@
 const { readFileSync } = require("fs");
 const { join } = require("path");
 const { loadNpcCard } = require("./npc-cards");
+const { loadCampaignTemplate, attachCampaignMeta } = require("./campaign-loader");
 
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
@@ -65,14 +66,19 @@ function applySceneTemplate(sessionState, template) {
   return sessionState;
 }
 
-function seedSessionFromScenario(sessionState, scenarioId) {
+function seedSessionFromScenario(sessionState, scenarioId, options = {}) {
   const template = loadSceneTemplate(scenarioId);
   applySceneTemplate(sessionState, template);
+  if (options.campaignId) {
+    const campaign = loadCampaignTemplate(options.campaignId);
+    attachCampaignMeta(sessionState, campaign);
+  }
   return {
     scenarioId: template.id,
     title: template.title,
     opening: template.opening,
-    starterPrompts: cloneJson(template.starterPrompts || [])
+    starterPrompts: cloneJson(template.starterPrompts || []),
+    campaignId: options.campaignId || null
   };
 }
 

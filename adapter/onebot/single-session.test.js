@@ -101,6 +101,15 @@ test("returns state summary command", () => {
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
+test("campaign command shows story arc hooks", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  const result = handleOneBotMessage(makeEvent("/aikp campaign"), { storageRoot });
+  assert.equal(result.ok, true);
+  assert.match(result.reply, /故事弧：旧教堂异响/);
+  assert.match(result.reply, /当前预留钩子：/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
 test("scene and recap commands show environment and stage summary", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });

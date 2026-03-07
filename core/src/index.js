@@ -20,6 +20,7 @@ const { WEAPON_TABLE, getWeaponProfile, buildCombatActionFromWeapon } = require(
 const { createSessionSnapshot, serializeSessionSnapshot, parseSessionSnapshot, saveSessionState, loadSessionState, loadSessionSnapshot } = require("./session-storage");
 const { validateInvestigatorCard, validateSceneState, validateCheckEvent, validateSessionState } = require("./schema-validation");
 const { loadSceneTemplate, buildNpcRuntimeFromCard, buildScenarioNpcs, applySceneTemplate, seedSessionFromScenario } = require("./scene-loader");
+const { loadCampaignTemplate, getCampaignScene, listCampaignHooks, buildCampaignMeta, attachCampaignMeta, getCurrentCampaign, formatCampaignSummary } = require("./campaign-loader");
 const { normalizeText, routeOldChurchNightAction, routeScenarioAction, processScenarioTurn } = require("./scene-action-router");
 
 module.exports = {
@@ -71,6 +72,13 @@ module.exports = {
   buildScenarioNpcs,
   applySceneTemplate,
   seedSessionFromScenario,
+  loadCampaignTemplate,
+  getCampaignScene,
+  listCampaignHooks,
+  buildCampaignMeta,
+  attachCampaignMeta,
+  getCurrentCampaign,
+  formatCampaignSummary,
   normalizeText,
   routeOldChurchNightAction,
   routeScenarioAction,

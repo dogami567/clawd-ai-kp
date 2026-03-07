@@ -12,7 +12,11 @@ const {
   getOccupationTemplate,
   QUICK_FIRE_VALUES,
   processScenarioTurn,
-  settleSessionApi
+  settleSessionApi,
+  loadCampaignTemplate,
+  attachCampaignMeta,
+  formatCampaignSummary,
+  getCurrentCampaign
 } = require("../../core/src/index");
 const { resolveSkillDefault } = require("../../core/src/skill-defaults");
 
@@ -119,6 +123,7 @@ function buildInitialMeta(event, layout, scenarioId) {
 function ensureConversationSession(event, options = {}) {
   const layout = buildStorageLayout(options.storageRoot, event);
   const scenarioId = options.scenarioId || "old-church-night";
+  const campaignId = options.campaignId || "old-church-arc";
   let meta = loadMeta(layout);
   let sessionState;
 
@@ -133,8 +138,10 @@ function ensureConversationSession(event, options = {}) {
     sessionId: `onebot-${layout.conversationKey}`,
     scenarioId
   });
+  attachCampaignMeta(sessionState, loadCampaignTemplate(campaignId));
   saveSessionApi(sessionState, layout.sessionFile, { meta: { conversationKey: layout.conversationKey } });
   meta = buildInitialMeta(event, layout, scenarioId);
+  meta.campaignId = campaignId;
   saveMeta(layout, meta);
   return { layout, meta, sessionState, created: true };
 }
@@ -142,8 +149,11 @@ function ensureConversationSession(event, options = {}) {
 function rebuildConversationSession(event, options = {}) {
   const layout = buildStorageLayout(options.storageRoot, event);
   const scenarioId = options.scenarioId || "old-church-night";
+  const campaignId = options.campaignId || "old-church-arc";
   const sessionState = startSessionApi({ sessionId: `onebot-${layout.conversationKey}`, scenarioId });
+  attachCampaignMeta(sessionState, loadCampaignTemplate(campaignId));
   const meta = buildInitialMeta(event, layout, scenarioId);
+  meta.campaignId = campaignId;
   saveSessionApi(sessionState, layout.sessionFile, { meta: { conversationKey: layout.conversationKey } });
   saveMeta(layout, meta);
   return { layout, meta, sessionState, created: true };
@@ -730,6 +740,7 @@ function formatHelpReply() {
     "- /aikp join 确认当前调查员",
     "- /aikp sheet 查看自己的调查员卡",
     "- /aikp state 查看当前场景状态",
+    "- /aikp campaign 查看当前故事弧与预留钩子",
     "- /aikp scene 查看场景环境面板",
     "- /aikp recap 看当前阶段总结",
     "- /aikp party 查看队伍面板",
@@ -835,6 +846,9 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
 
   if (text.trim() === "/aikp state") {
     return { reply: formatStateSummary(stateBundle.sessionState, stateBundle.meta) };
+  }
+  if (text.trim() === "/aikp campaign") {
+    return { reply: formatCampaignSummary(getCurrentCampaign(stateBundle.sessionState)) };
   }
   if (text.trim() === "/aikp scene") {
     return { reply: formatScenePanel(stateBundle.sessionState) };
