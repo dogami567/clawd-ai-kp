@@ -93,7 +93,21 @@ test("returns state summary command", () => {
   const result = handleOneBotMessage(makeEvent("/aikp state"), { storageRoot });
   assert.equal(result.ok, true);
   assert.match(result.reply, /场景：/);
-  assert.match(result.reply, /危险：/);
+  assert.match(result.reply, /当前轮次：第 1 轮/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("party command shows party panel and current focus", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  handleOneBotMessage(makeEvent("hello"), { storageRoot });
+  handleOneBotMessage(makeEvent("hello", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp party-roll journalist"), { storageRoot, randomInt: () => 3 });
+  const result = handleOneBotMessage(makeEvent("/aikp party"), { storageRoot });
+  assert.equal(result.ok, true);
+  assert.match(result.reply, /队伍面板｜第 1 轮/);
+  assert.match(result.reply, /👉/);
+  assert.match(result.reply, /dogami/);
+  assert.match(result.reply, /阿青/);
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
@@ -103,6 +117,24 @@ test("returns help command text", () => {
   assert.equal(result.ok, true);
   assert.match(result.reply, /AI-KP 可用指令/);
   assert.match(result.reply, /party-roll/);
+  assert.match(result.reply, /focus/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("focus and next commands switch current actor", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  handleOneBotMessage(makeEvent("hello"), { storageRoot });
+  handleOneBotMessage(makeEvent("hello", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp party-roll journalist"), { storageRoot, randomInt: () => 3 });
+  const focus = handleOneBotMessage(makeEvent("/aikp focus 阿青"), { storageRoot });
+  assert.equal(focus.ok, true);
+  assert.match(focus.reply, /切到 .*阿青|切到 .*了/);
+  const who = handleOneBotMessage(makeEvent("/aikp who"), { storageRoot });
+  assert.equal(who.ok, true);
+  assert.match(who.reply, /阿青/);
+  const next = handleOneBotMessage(makeEvent("/aikp next"), { storageRoot });
+  assert.equal(next.ok, true);
+  assert.doesNotMatch(next.reply, /阿青（第 1 轮）$/);
   rmSync(storageRoot, { recursive: true, force: true });
 });
 

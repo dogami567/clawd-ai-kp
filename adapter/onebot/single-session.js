@@ -85,6 +85,17 @@ function rememberUser(meta, event) {
   return meta;
 }
 
+function ensureTurnState(meta) {
+  meta.turnState = meta.turnState || {
+    actorOrder: [],
+    currentActorId: null,
+    round: 1
+  };
+  meta.turnState.actorOrder = Array.isArray(meta.turnState.actorOrder) ? meta.turnState.actorOrder : [];
+  if (meta.turnState.round == null) meta.turnState.round = 1;
+  return meta.turnState;
+}
+
 function buildInitialMeta(event, layout, scenarioId) {
   const meta = {
     conversationKey: layout.conversationKey,
@@ -94,7 +105,12 @@ function buildInitialMeta(event, layout, scenarioId) {
     updatedAt: new Date().toISOString(),
     actorsByUserId: {},
     knownUsers: [],
-    messageCount: 0
+    messageCount: 0,
+    turnState: {
+      actorOrder: [],
+      currentActorId: null,
+      round: 1
+    }
   };
   rememberUser(meta, event);
   return meta;
@@ -350,9 +366,75 @@ function getActorForUser(stateBundle, userId) {
   return actorId ? stateBundle.sessionState.investigators[actorId] : null;
 }
 
+function syncActorIntoTurnState(meta, actorId) {
+  const turnState = ensureTurnState(meta);
+  if (!turnState.actorOrder.includes(actorId)) {
+    turnState.actorOrder.push(actorId);
+  }
+  if (!turnState.currentActorId) {
+    turnState.currentActorId = actorId;
+  }
+  return turnState;
+}
+
+function buildPartyEntries(stateBundle) {
+  const knownUsers = Array.isArray(stateBundle.meta.knownUsers) ? stateBundle.meta.knownUsers : [];
+  const turnState = ensureTurnState(stateBundle.meta);
+  return knownUsers.map((user) => {
+    const actorId = stateBundle.meta.actorsByUserId[String(user.userId)] || null;
+    const investigator = actorId ? stateBundle.sessionState.investigators[actorId] : null;
+    return {
+      userId: String(user.userId),
+      userName: user.name,
+      actorId,
+      investigator,
+      isCurrent: Boolean(actorId && turnState.currentActorId === actorId)
+    };
+  });
+}
+
+function resolveActorSelection(stateBundle, selector = "") {
+  const normalized = String(selector || "").trim().toLowerCase();
+  if (!normalized) return null;
+  const entries = buildPartyEntries(stateBundle);
+  return entries.find((entry) => {
+    const fields = [
+      entry.userId,
+      entry.userName,
+      entry.actorId,
+      entry.investigator?.id,
+      entry.investigator?.name
+    ].filter(Boolean).map((value) => String(value).toLowerCase());
+    return fields.some((value) => value === normalized || value.includes(normalized));
+  }) || null;
+}
+
+function setCurrentActor(stateBundle, actorId) {
+  const turnState = ensureTurnState(stateBundle.meta);
+  syncActorIntoTurnState(stateBundle.meta, actorId);
+  turnState.currentActorId = actorId;
+  stateBundle.meta.updatedAt = new Date().toISOString();
+  saveMeta(stateBundle.layout, stateBundle.meta);
+  return turnState;
+}
+
+function advanceCurrentActor(stateBundle) {
+  const turnState = ensureTurnState(stateBundle.meta);
+  const available = turnState.actorOrder.filter((actorId) => stateBundle.sessionState.investigators[actorId]);
+  if (!available.length) return turnState;
+  const currentIndex = Math.max(available.indexOf(turnState.currentActorId), 0);
+  const nextIndex = (currentIndex + 1) % available.length;
+  turnState.currentActorId = available[nextIndex];
+  if (nextIndex === 0) turnState.round += 1;
+  stateBundle.meta.updatedAt = new Date().toISOString();
+  saveMeta(stateBundle.layout, stateBundle.meta);
+  return turnState;
+}
+
 function upsertInvestigatorForUser(event, stateBundle, investigator) {
   addInvestigator(stateBundle.sessionState, investigator);
   stateBundle.meta.actorsByUserId[String(event.user_id || "guest")] = investigator.id;
+  syncActorIntoTurnState(stateBundle.meta, investigator.id);
   stateBundle.meta.updatedAt = new Date().toISOString();
   saveSessionApi(stateBundle.sessionState, stateBundle.layout.sessionFile, { meta: { conversationKey: stateBundle.layout.conversationKey } });
   saveMeta(stateBundle.layout, stateBundle.meta);
@@ -379,18 +461,41 @@ function ensureActorForUser(event, stateBundle, options = {}) {
   return { actorId: investigator.id, created: true, investigator };
 }
 
-function formatStateSummary(sessionState) {
+function formatStateSummary(sessionState, meta = {}) {
   const state = getState(sessionState);
   const revealedClues = state.scene.clues.filter((item) => item.revealed).map((item) => item.title);
   const npcBits = (state.scene.participants.npcs || []).map((npc) => `${npc.name}(${npc.attitude})`);
+  const turnState = ensureTurnState(meta);
+  const currentActor = turnState.currentActorId ? sessionState.investigators[turnState.currentActorId] : null;
   const lines = [
     `场景：${state.scene.summary || state.scene.location}`,
     `地点：${state.scene.location}`,
     `时间：${state.scene.timeState.timelineMinute} 分钟`,
     `危险：${state.scene.threats.dangerLevel}（暴露 ${state.scene.threats.exposure} / 压力 ${state.scene.threats.pressure}）`,
+    `当前轮次：第 ${turnState.round} 轮｜当前聚焦：${currentActor ? currentActor.name : "未指定"}`,
     `线索：${revealedClues.length ? revealedClues.join("、") : "还没翻到明线索"}`,
     `在场 NPC：${npcBits.length ? npcBits.join("、") : "暂无"}`
   ];
+  return lines.join("\n");
+}
+
+function formatPartySummary(stateBundle) {
+  const entries = buildPartyEntries(stateBundle);
+  const turnState = ensureTurnState(stateBundle.meta);
+  const lines = [`队伍面板｜第 ${turnState.round} 轮`];
+  if (!entries.length) {
+    lines.push("- 当前还没人进场。先 `/aikp roll journalist` 或 `/aikp quickfire artist`。");
+    return lines.join("\n");
+  }
+
+  for (const entry of entries) {
+    if (!entry.investigator) {
+      lines.push(`- ${entry.userName}：还没车卡`);
+      continue;
+    }
+    const marker = entry.isCurrent ? "👉" : "-";
+    lines.push(`${marker} ${entry.userName}｜${entry.investigator.name}｜${entry.investigator.occupation}｜HP ${entry.investigator.resources.hp}｜SAN ${entry.investigator.resources.san}`);
+  }
   return lines.join("\n");
 }
 
@@ -440,7 +545,7 @@ function formatStartReply(stateBundle, actorResult) {
     ? `当前绑定调查员：${actorResult.investigator.name}。`
     : "你现在还没车卡，先建卡再入场会更像真跑团。";
   const promptLine = prompts.length ? `场景里可以直接试这些：\n- ${prompts.join("\n- ")}` : "你现在可以直接说行动。";
-  const helpLine = "先建卡：/aikp roll journalist 或 /aikp quickfire artist；批量：/aikp party-roll journalist";
+  const helpLine = "先建卡：/aikp roll journalist 或 /aikp quickfire artist；多人：/aikp party；切人：/aikp next";
   return [joinLine, opening, promptLine, helpLine].join("\n");
 }
 
@@ -455,6 +560,10 @@ function formatHelpReply() {
     "- /aikp join 确认当前调查员",
     "- /aikp sheet 查看自己的调查员卡",
     "- /aikp state 查看当前场景状态",
+    "- /aikp party 查看队伍面板",
+    "- /aikp who 查看当前轮到谁",
+    "- /aikp focus <玩家名> 手动切到某位玩家",
+    "- /aikp next 切到下一位玩家",
     "- /aikp settle 生成本轮结团摘要",
     "- /aikp reset 重开当前场景",
     "职业 key 可先用：journalist detective doctor professor artist veteran dilettante"
@@ -499,6 +608,7 @@ function formatPartyRollReply(createdInvestigators, mode) {
   for (const investigator of createdInvestigators) {
     lines.push(`- ${investigator.name}｜${investigator.occupation}｜HP ${investigator.resources.hp}｜SAN ${investigator.resources.san}`);
   }
+  lines.push("现在可以用 `/aikp party` 看队伍面板，用 `/aikp next` 往下一位切。\n");
   return lines.join("\n");
 }
 
@@ -523,6 +633,7 @@ function runPartyRollCommand(stateBundle, mode, occupationKey, randomInt) {
     const investigator = createInvestigatorForMode(fakeEvent, mode, resolvedOccupation, randomInt);
     addInvestigator(stateBundle.sessionState, investigator);
     stateBundle.meta.actorsByUserId[String(user.userId)] = investigator.id;
+    syncActorIntoTurnState(stateBundle.meta, investigator.id);
     createdInvestigators.push(investigator);
   }
 
@@ -549,7 +660,15 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
   }
 
   if (text.trim() === "/aikp state") {
-    return { reply: formatStateSummary(stateBundle.sessionState) };
+    return { reply: formatStateSummary(stateBundle.sessionState, stateBundle.meta) };
+  }
+  if (text.trim() === "/aikp party") {
+    return { reply: formatPartySummary(stateBundle) };
+  }
+  if (text.trim() === "/aikp who") {
+    const turnState = ensureTurnState(stateBundle.meta);
+    const currentActor = turnState.currentActorId ? stateBundle.sessionState.investigators[turnState.currentActorId] : null;
+    return { reply: currentActor ? `现在轮到 ${currentActor.name}（第 ${turnState.round} 轮）。` : "现在还没指定当前行动者。" };
   }
 
   if (text.trim() === "/aikp start" || text.trim() === "/aikp reset") {
@@ -593,6 +712,21 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
   if (command === "/aikp" && args[0] === "party-quickfire") {
     const occupationKey = args[1] ? resolveOccupationKey(args[1], "journalist") : null;
     return { reply: runPartyRollCommand(stateBundle, "quickfire", occupationKey, randomInt) };
+  }
+
+  if (command === "/aikp" && args[0] === "focus") {
+    const entry = resolveActorSelection(stateBundle, args.slice(1).join(" "));
+    if (!entry?.actorId || !entry.investigator) {
+      return { reply: "我没找到你要切到的那位。可以用玩家名、调查员名、userId 来指。" };
+    }
+    const turnState = setCurrentActor(stateBundle, entry.actorId);
+    return { reply: `好，现在 spotlight 切到 ${entry.investigator.name} 了（第 ${turnState.round} 轮）。` };
+  }
+
+  if (command === "/aikp" && args[0] === "next") {
+    const turnState = advanceCurrentActor(stateBundle);
+    const currentActor = turnState.currentActorId ? stateBundle.sessionState.investigators[turnState.currentActorId] : null;
+    return { reply: currentActor ? `下一位是 ${currentActor.name}（第 ${turnState.round} 轮）。` : "现在还没有可轮转的调查员。" };
   }
 
   return null;
@@ -677,6 +811,7 @@ module.exports = {
   ensureConversationSession,
   ensureActorForUser,
   formatStateSummary,
+  formatPartySummary,
   formatTurnReply,
   formatStartReply,
   formatHelpReply,
@@ -684,5 +819,9 @@ module.exports = {
   formatInvestigatorSummary,
   handleOneBotMessage,
   rebuildConversationSession,
-  runPartyRollCommand
+  runPartyRollCommand,
+  buildPartyEntries,
+  resolveActorSelection,
+  setCurrentActor,
+  advanceCurrentActor
 };
