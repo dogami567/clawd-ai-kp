@@ -25,6 +25,7 @@ const { loadStoryPackTemplate, formatStoryPackSummary } = require("./story-pack-
 const { validateCampaignTemplate, validateStoryPackTemplate } = require("./authoring-validation");
 const { importSceneMarkdown } = require("./scene-markdown-import");
 const { importCampaignMarkdown, importStoryPackMarkdown } = require("./campaign-story-markdown-import");
+const { saveSceneTemplate, saveCampaignTemplate, saveStoryPackTemplate } = require("./authoring-save");
 const { normalizeText, routeOldChurchNightAction, routeScenarioAction, processScenarioTurn } = require("./scene-action-router");
 
 module.exports = {
@@ -94,6 +95,9 @@ module.exports = {
   importSceneMarkdown,
   importCampaignMarkdown,
   importStoryPackMarkdown,
+  saveSceneTemplate,
+  saveCampaignTemplate,
+  saveStoryPackTemplate,
   normalizeText,
   routeOldChurchNightAction,
   routeScenarioAction,

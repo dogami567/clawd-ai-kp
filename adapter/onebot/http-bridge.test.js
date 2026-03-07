@@ -104,3 +104,33 @@ test("http bridge can auto-dispatch action to onebot api", async () => {
   apiServer.close();
   rmSync(storageRoot, { recursive: true, force: true });
 });
+
+test("http bridge can preview and save imported markdown scene", async () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-http-bridge-"));
+  const bridge = createOneBotHttpBridge({ storageRoot });
+  const port = await listen(bridge);
+  const markdown = `# Scene Spec\nid: imported-scene\ntitle: 导入场景\nsummary: 导入场景摘要\nlocation: 测试地点\nsceneType: investigation\n\n## Opening\n这里是导入场景开场。\n`;
+
+  const previewResponse = await fetch(`http://127.0.0.1:${port}/authoring/import/scene`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ markdown })
+  });
+  const preview = await previewResponse.json();
+  assert.equal(preview.ok, true);
+  assert.equal(preview.mode, "preview");
+  assert.equal(preview.template.id, "imported-scene");
+
+  const saveResponse = await fetch(`http://127.0.0.1:${port}/authoring/import/scene`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ markdown, save: true })
+  });
+  const saved = await saveResponse.json();
+  assert.equal(saved.ok, true);
+  assert.equal(saved.mode, "save");
+  assert.match(saved.saveResult.filePath, /imported-scene\.scene\.json$/);
+
+  bridge.close();
+  rmSync(storageRoot, { recursive: true, force: true });
+});

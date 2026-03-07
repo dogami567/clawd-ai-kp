@@ -130,6 +130,7 @@ node core/src/coc7-validation.test.js
 - Markdown campaign/story pack 导入器：`core/src/campaign-story-markdown-import.js`
 - OneBot runtime 已能吃原始消息事件并吐标准发送 action
 - OneBot HTTP bridge 已能收 `POST /onebot/event`，返回发送动作，并可选直连转发到 OneBot API
+- HTTP bridge 也支持作者导入接口：`/authoring/import/scene|campaign|story-pack`
 
 ## 下一步
 1. 把 `advance` 从手动推进继续升级成更自动的 hook/条件驱动切幕

@@ -1,6 +1,14 @@
 const http = require("http");
 const { URL } = require("url");
 const { handleOneBotEnvelope } = require("./runtime");
+const {
+  importSceneMarkdown,
+  importCampaignMarkdown,
+  importStoryPackMarkdown,
+  saveSceneTemplate,
+  saveCampaignTemplate,
+  saveStoryPackTemplate
+} = require("../../core/src/index");
 
 function buildJsonHeaders(statusCode = 200) {
   return {
@@ -28,6 +36,24 @@ async function readRequestJson(request) {
 function buildActionUrl(apiBaseUrl, actionName) {
   const base = String(apiBaseUrl || "").replace(/\/$/, "");
   return `${base}/${actionName}`;
+}
+
+function getRequestMode(body = {}) {
+  return body.save === true ? "save" : "preview";
+}
+
+function importAuthoringMarkdown(kind, markdown) {
+  if (kind === "scene") return importSceneMarkdown(markdown);
+  if (kind === "campaign") return importCampaignMarkdown(markdown);
+  if (kind === "story-pack") return importStoryPackMarkdown(markdown);
+  throw new Error(`Unsupported import kind: ${kind}`);
+}
+
+function saveAuthoringTemplate(kind, template) {
+  if (kind === "scene") return saveSceneTemplate(template);
+  if (kind === "campaign") return saveCampaignTemplate(template);
+  if (kind === "story-pack") return saveStoryPackTemplate(template);
+  throw new Error(`Unsupported save kind: ${kind}`);
 }
 
 async function dispatchOneBotAction(apiBaseUrl, sendAction) {
@@ -83,6 +109,21 @@ function createOneBotHttpBridge(options = {}) {
           ok: true,
           result,
           dispatchResult
+        });
+      }
+
+      if (request.method === "POST" && url.pathname.startsWith("/authoring/import/")) {
+        const kind = url.pathname.replace("/authoring/import/", "");
+        const body = await readRequestJson(request);
+        const template = importAuthoringMarkdown(kind, body.markdown || "");
+        const mode = getRequestMode(body);
+        const saveResult = mode === "save" ? saveAuthoringTemplate(kind, template) : null;
+        return sendJson(response, 200, {
+          ok: true,
+          kind,
+          mode,
+          template,
+          saveResult
         });
       }
 
