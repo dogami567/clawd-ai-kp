@@ -99,6 +99,8 @@ node core/src/coc7-validation.test.js
 - 物品时代校验与条件化许可
 - 检定 -> fail-forward -> bonus/penalty dice -> 战斗一轮 -> SAN -> 结团
 - 命令式 API 外壳（建角 / 开团 / 入团 / 提交行动 / 查状态 / 结团 / 时间推进 / session 落盘与回读）
+- 轻量 schema 校验（调查员卡 / 场景状态 / 检定事件 / session state）
+- 结团摘要会带线索统计、NPC 后效、未结算倒计时
 - 动作裁定层（`explore / talk / use_item / risky_action / steal / follow`）
 - 偷窃 / 跟踪的延迟后果倒计时（失物发现、路线变化、警觉上升）
 - 单幕场景 demo（旧教堂、守墓人、祭坛、线索链、危险节点）

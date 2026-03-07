@@ -22,9 +22,12 @@ const { applyStateChanges, buildStateChanges } = require("./state-effects");
 const { applyContentEffects } = require("./content-effects");
 const { buildCombatActionFromWeapon } = require("./weapon-table");
 const { saveSessionState, loadSessionState, loadSessionSnapshot } = require("./session-storage");
+const { validateInvestigatorCard, validateSessionState } = require("./schema-validation");
 
 function createCharacter(input) {
-  return createInvestigatorFromQuickFire(input);
+  const investigator = createInvestigatorFromQuickFire(input);
+  validateInvestigatorCard(investigator);
+  return investigator;
 }
 
 function startSessionApi(input = {}) {
@@ -41,11 +44,14 @@ function startSessionApi(input = {}) {
     });
   }
 
+  validateSessionState(session);
   return session;
 }
 
 function addInvestigator(sessionState, investigator) {
+  validateInvestigatorCard(investigator);
   registerInvestigator(sessionState, investigator);
+  validateSessionState(sessionState);
   return {
     ok: true,
     investigatorId: investigator.id,
@@ -229,15 +235,20 @@ function settleSessionApi(sessionState) {
 }
 
 function saveSessionApi(sessionState, filePath, options = {}) {
+  validateSessionState(sessionState);
   return saveSessionState(filePath, sessionState, options);
 }
 
 function loadSessionApi(filePath) {
-  return loadSessionState(filePath);
+  const sessionState = loadSessionState(filePath);
+  validateSessionState(sessionState);
+  return sessionState;
 }
 
 function loadSessionSnapshotApi(filePath) {
-  return loadSessionSnapshot(filePath);
+  const snapshot = loadSessionSnapshot(filePath);
+  validateSessionState(snapshot.sessionState);
+  return snapshot;
 }
 
 module.exports = {

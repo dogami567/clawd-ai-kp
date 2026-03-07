@@ -18,6 +18,7 @@ const { createCharacter, startSessionApi, addInvestigator, submitAction, getStat
 const { adjudicateAction } = require("./adjudication-engine");
 const { WEAPON_TABLE, getWeaponProfile, buildCombatActionFromWeapon } = require("./weapon-table");
 const { createSessionSnapshot, serializeSessionSnapshot, parseSessionSnapshot, saveSessionState, loadSessionState, loadSessionSnapshot } = require("./session-storage");
+const { validateInvestigatorCard, validateSceneState, validateCheckEvent, validateSessionState } = require("./schema-validation");
 
 module.exports = {
   createSession,
@@ -58,5 +59,9 @@ module.exports = {
   parseSessionSnapshot,
   saveSessionState,
   loadSessionState,
-  loadSessionSnapshot
+  loadSessionSnapshot,
+  validateInvestigatorCard,
+  validateSceneState,
+  validateCheckEvent,
+  validateSessionState
 };

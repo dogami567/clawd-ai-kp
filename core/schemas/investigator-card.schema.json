@@ -9,8 +9,10 @@
     "name",
     "age",
     "occupation",
+    "occupationKey",
     "persona",
     "attributes",
+    "attributeChecks",
     "skills",
     "resources",
     "inventory",
@@ -18,14 +20,21 @@
     "identity",
     "skillAllocation",
     "finance",
-    "backstory"
+    "backstory",
+    "pointBudgets",
+    "creationMethod",
+    "inventoryValidation",
+    "inventoryAllowance"
   ],
   "properties": {
     "id": { "type": "string", "minLength": 1 },
     "name": { "type": "string", "minLength": 1 },
     "age": { "type": "integer", "minimum": 10, "maximum": 120 },
     "occupation": { "type": "string", "minLength": 1 },
+    "occupationKey": { "type": "string", "minLength": 1 },
     "persona": { "type": "string", "minLength": 1 },
+    "motivation": { "type": "string" },
+    "era": { "type": "string" },
     "identity": {
       "type": "object",
       "additionalProperties": false,
@@ -50,6 +59,48 @@
         "INT": { "type": "integer", "minimum": 1, "maximum": 99 },
         "SIZ": { "type": "integer", "minimum": 1, "maximum": 99 },
         "EDU": { "type": "integer", "minimum": 1, "maximum": 99 }
+      }
+    },
+    "attributeChecks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["STR", "CON", "DEX", "APP", "POW", "INT", "SIZ", "EDU", "Luck"],
+      "properties": {
+        "STR": { "$ref": "#/$defs/attributeBlock" },
+        "CON": { "$ref": "#/$defs/attributeBlock" },
+        "DEX": { "$ref": "#/$defs/attributeBlock" },
+        "APP": { "$ref": "#/$defs/attributeBlock" },
+        "POW": { "$ref": "#/$defs/attributeBlock" },
+        "INT": { "$ref": "#/$defs/attributeBlock" },
+        "SIZ": { "$ref": "#/$defs/attributeBlock" },
+        "EDU": { "$ref": "#/$defs/attributeBlock" },
+        "Luck": { "$ref": "#/$defs/attributeBlock" }
+      }
+    },
+    "occupationTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "name", "creditRatingRange", "occupationSkillFormula", "suggestedSkills"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "creditRatingRange": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "integer", "minimum": 0, "maximum": 99 }
+        },
+        "occupationSkillFormula": { "type": "string" },
+        "suggestedSkills": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "pointBudgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["occupation", "interest"],
+      "properties": {
+        "occupation": { "type": "integer", "minimum": 0 },
+        "interest": { "type": "integer", "minimum": 0 }
       }
     },
     "skills": {
@@ -82,8 +133,22 @@
         "mp": { "type": "integer", "minimum": 0 },
         "mpMax": { "type": "integer", "minimum": 0 },
         "moveRate": { "type": "integer", "minimum": 1 },
+        "baseMoveRate": { "type": "integer", "minimum": 1 },
         "build": { "type": "integer" },
-        "damageBonusText": { "type": "string" }
+        "damageBonus": { "type": ["integer", "null"] },
+        "damageBonusText": { "type": "string" },
+        "ageAdjustments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["movementPenalty", "eduImprovementChecks", "luckRerolls", "buildPenalty", "notes"],
+          "properties": {
+            "movementPenalty": { "type": "integer", "minimum": 0 },
+            "eduImprovementChecks": { "type": "integer", "minimum": 0 },
+            "luckRerolls": { "type": "integer", "minimum": 0 },
+            "buildPenalty": { "type": "integer", "minimum": 0 },
+            "notes": { "type": "array", "items": { "type": "string" } }
+          }
+        }
       }
     },
     "inventory": {
@@ -98,6 +163,31 @@
           "quantity": { "type": "integer", "minimum": 1, "default": 1 },
           "notes": { "type": "string" }
         }
+      }
+    },
+    "inventoryValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "issues"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    "inventoryAllowance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed", "mode", "notes"],
+      "properties": {
+        "allowed": { "type": "boolean" },
+        "mode": { "type": "string", "enum": ["direct", "conditional"] },
+        "notes": { "type": "array", "items": { "type": "string" } }
       }
     },
     "skillAllocation": {
@@ -168,6 +258,7 @@
         }
       }
     },
+    "creationMethod": { "type": "string", "enum": ["quick_fire", "traditional_random"] },
     "meta": {
       "type": "object",
       "additionalProperties": false,
@@ -175,6 +266,18 @@
         "era": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "$defs": {
+    "attributeBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "half", "fifth"],
+      "properties": {
+        "value": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "half": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "fifth": { "type": "integer", "minimum": 0, "maximum": 100 }
       }
     }
   }

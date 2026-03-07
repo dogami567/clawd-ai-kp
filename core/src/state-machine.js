@@ -1,5 +1,6 @@
 const { runCheck, runOpposedCheck } = require("./check-engine");
 const { rollFormula, normalizeDamageFormula, applyDamage } = require("./combat-rules");
+const { validateCheckEvent } = require("./schema-validation");
 
 let checkSequence = 0;
 
@@ -306,6 +307,7 @@ function performSkillCheck(sessionState, input, randomInt) {
     }
   }
 
+  validateCheckEvent(event);
   sessionState.checkLog.push(event);
   return event;
 }
@@ -437,6 +439,48 @@ function runSanCheck(sessionState, payload, randomInt) {
   };
 }
 
+function buildSettlementNpcAftermath(sessionState) {
+  return (sessionState.scene.participants.npcs || []).map((npc) => ({
+    id: npc.id,
+    name: npc.name,
+    attitude: npc.attitude,
+    trust: npc.trust ?? 0,
+    suspicion: npc.socialState?.suspicion ?? 0,
+    fear: npc.socialState?.fear ?? 0,
+    affinity: npc.socialState?.affinity ?? 0,
+    obligation: npc.socialState?.obligation ?? 0,
+    flags: npc.socialState?.flags || []
+  }));
+}
+
+function buildSettlementSummaryLines(sessionState, settlement) {
+  const lines = [];
+  const revealedClues = settlement.clueSummary.filter((item) => item.revealed);
+  const hiddenCoreClues = settlement.clueSummary.filter((item) => !item.revealed && item.kind === "core");
+  const npcAftermath = settlement.npcAftermath.filter((item) => item.attitude !== "neutral" || item.suspicion || item.fear || item.affinity || item.obligation || item.flags.length);
+
+  lines.push(`时间推进到 ${sessionState.scene.timeState.timelineMinute} 分钟，危险等级现在是 ${sessionState.scene.threats.dangerLevel}。`);
+  lines.push(`线索共拿到 ${revealedClues.length} 条，其中核心线索 ${revealedClues.filter((item) => item.kind === "core").length} 条。`);
+
+  if (hiddenCoreClues.length) {
+    lines.push(`还有 ${hiddenCoreClues.length} 条核心线索没被翻出来：${hiddenCoreClues.map((item) => item.title).join("、")}`);
+  }
+
+  if (npcAftermath.length) {
+    lines.push(`NPC 后效已经留下来了：${npcAftermath.map((item) => `${item.name}[${item.attitude}]`).join("、")}`);
+  }
+
+  if (settlement.pendingCountdowns.length) {
+    lines.push(`还有 ${settlement.pendingCountdowns.length} 个倒计时没结算完，后面继续跑会接着炸。`);
+  }
+
+  if (settlement.unresolved.length) {
+    lines.push(`当前还悬着的事：${settlement.unresolved.join("、")}`);
+  }
+
+  return lines;
+}
+
 function settleSession(sessionState) {
   sessionState.scene.sceneType = "settlement";
   const snapshot = Object.values(sessionState.investigators).map((item) => ({
@@ -448,13 +492,33 @@ function settleSession(sessionState) {
     conditions: item.status.conditions
   }));
 
+  const clueSummary = sessionState.scene.clues.map((item) => ({ ...item }));
+  const triggeredEvents = sessionState.scene.events.filter((item) => item.triggered).map((item) => item.label);
+  const npcAftermath = buildSettlementNpcAftermath(sessionState);
+
   sessionState.settlement = {
     sessionId: sessionState.sessionId,
     generatedAt: new Date().toISOString(),
     investigatorSnapshots: snapshot,
-    clueSummary: sessionState.scene.clues,
+    clueSummary,
+    clueStats: {
+      revealed: clueSummary.filter((item) => item.revealed).length,
+      revealedCore: clueSummary.filter((item) => item.revealed && item.kind === "core").length,
+      hiddenCore: clueSummary.filter((item) => !item.revealed && item.kind === "core").length
+    },
     eventCount: sessionState.checkLog.length,
+    triggeredEvents,
     unresolved: sessionState.scene.events.filter((item) => !item.triggered).map((item) => item.label),
+    threatSummary: {
+      exposure: sessionState.scene.threats.exposure,
+      pressure: sessionState.scene.threats.pressure,
+      dangerLevel: sessionState.scene.threats.dangerLevel
+    },
+    timelineSummary: {
+      timelineMinute: sessionState.scene.timeState.timelineMinute,
+      combatRound: sessionState.scene.timeState.combatRound
+    },
+    npcAftermath,
     pendingCountdowns: sessionState.scene.timeState.countdowns.map((item) => ({
       key: item.key,
       remaining: item.remaining,
@@ -463,6 +527,7 @@ function settleSession(sessionState) {
     }))
   };
 
+  sessionState.settlement.summaryLines = buildSettlementSummaryLines(sessionState, sessionState.settlement);
   return sessionState.settlement;
 }
 

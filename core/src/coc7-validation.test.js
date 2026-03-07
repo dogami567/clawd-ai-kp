@@ -2,7 +2,7 @@ const assert = require("assert");
 const { existsSync, rmSync } = require("fs");
 const { join } = require("path");
 const { tmpdir } = require("os");
-const { createCharacter, startSessionApi, addInvestigator, submitAction, saveSessionApi, loadSessionApi, loadSessionSnapshotApi } = require("./api");
+const { createCharacter, startSessionApi, addInvestigator, submitAction, saveSessionApi, loadSessionApi, loadSessionSnapshotApi, settleSessionApi } = require("./api");
 const { runCheck } = require("./check-engine");
 
 function scriptedRandom(values) {
@@ -223,6 +223,33 @@ function testSessionStorageRoundTrip() {
   rmSync(filePath, { force: true });
 }
 
+function testSettlementSummaryIncludesSceneAftermath() {
+  const session = startSessionApi({ sessionId: 'settlement-summary', summary: '夜探旧教堂', location: '河谷旧教堂' });
+  const actor = buildCharacter();
+  addInvestigator(session, actor);
+  session.scene.clues.push({ id: 'clue-1', title: '祭坛背后的异常刮痕', kind: 'core', quality: 'clear', revealed: true, source: 'scene' });
+  session.scene.clues.push({ id: 'clue-2', title: '祭坛下方的细长槽口', kind: 'core', quality: 'partial', revealed: false, source: 'scene' });
+  session.scene.events.push({ id: 'evt-1', label: '守墓人对你起了戒心', triggered: true });
+  session.scene.events.push({ id: 'evt-2', label: '钟楼深处还有动静', triggered: false });
+  session.scene.participants.npcs.push({
+    id: 'gravedigger',
+    name: '守墓人',
+    attitude: 'guarded',
+    trust: -1,
+    status: 'active',
+    socialState: { suspicion: 2, fear: 0, affinity: 0, obligation: 0, flags: ['reasoned_with'], lastInteractionStyle: 'persuade' }
+  });
+  submitAction(session, { kind: 'advance_time', minutes: 9 });
+
+  const settlement = settleSessionApi(session);
+  assert.equal(settlement.clueStats.revealed, 1);
+  assert.equal(settlement.clueStats.hiddenCore, 1);
+  assert.equal(settlement.threatSummary.dangerLevel, session.scene.threats.dangerLevel);
+  assert.equal(settlement.npcAftermath[0].name, '守墓人');
+  assert.equal(Array.isArray(settlement.summaryLines), true);
+  assert.equal(settlement.summaryLines.some((line) => line.includes('核心线索')), true);
+}
+
 function run() {
   testSkillBudgetValidation();
   testCreditRatingValidation();
@@ -233,6 +260,7 @@ function run() {
   testBonusDiceChoosesBetterRoll();
   testPenaltyDiceChoosesWorseRoll();
   testSessionStorageRoundTrip();
+  testSettlementSummaryIncludesSceneAftermath();
   console.log("coc7-validation.test.js passed");
 }
 

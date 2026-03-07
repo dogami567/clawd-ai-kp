@@ -26,8 +26,32 @@
     "mode": { "type": "string", "enum": ["open", "hidden"] },
     "skillKey": { "type": "string", "minLength": 1 },
     "difficulty": { "type": "string", "enum": ["regular", "hard", "extreme"] },
+    "baseTargetValue": { "type": "integer", "minimum": 0, "maximum": 99 },
     "targetValue": { "type": "integer", "minimum": 0, "maximum": 99 },
     "roll": { "type": "integer", "minimum": 1, "maximum": 100 },
+    "rollDetail": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "modifierType": { "type": "string", "enum": ["bonus", "penalty"] },
+        "modifierCount": { "type": "integer", "minimum": 1 },
+        "onesDigit": { "type": "integer", "minimum": 0, "maximum": 9 },
+        "chosenTensDigit": { "type": "integer", "minimum": 0, "maximum": 9 },
+        "candidateRolls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["tensDigit", "onesDigit", "roll"],
+            "properties": {
+              "tensDigit": { "type": "integer", "minimum": 0, "maximum": 9 },
+              "onesDigit": { "type": "integer", "minimum": 0, "maximum": 9 },
+              "roll": { "type": "integer", "minimum": 1, "maximum": 100 }
+            }
+          }
+        }
+      }
+    },
     "result": {
       "type": "object",
       "additionalProperties": false,
@@ -92,7 +116,29 @@
         "basis": { "type": "array", "items": { "type": "string" } },
         "impact": { "type": "string", "enum": ["small", "medium", "large"] },
         "duration": { "type": "string", "enum": ["instant", "1_round", "multi_round", "scene"] },
-        "balanceNote": { "type": "string" }
+        "balanceNote": { "type": "string" },
+        "leverageScore": { "type": "integer", "minimum": 0 },
+        "narrativeBonus": { "type": "integer", "minimum": 0 },
+        "failForward": { "type": "string" }
+      }
+    },
+    "countdownsTriggered": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "contentEffects": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "revealedClues": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+        "intelLine": { "type": ["string", "null"] },
+        "routeLine": { "type": ["string", "null"] },
+        "stolenItem": { "type": ["string", "null"] },
+        "aftermathLine": { "type": ["string", "null"] },
+        "socialAftermath": { "type": ["object", "null"], "additionalProperties": true }
       }
     },
     "timestamp": { "type": "string", "format": "date-time" }
