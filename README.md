@@ -121,8 +121,11 @@ node core/src/coc7-validation.test.js
 - Campaign 现在支持 `hooks / advance / goto` 三种推进方式，用于验证多幕衔接
 - 作者输入格式说明：`docs/story-pack-authoring-v0.1.md`
 - Scene Markdown 模板：`docs/scene-markdown-authoring-template.md`
+- Campaign Markdown 模板：`docs/campaign-markdown-authoring-template.md`
+- Story Pack Markdown 模板：`docs/story-pack-markdown-authoring-template.md`
 - 作者格式校验已接入 loader：`core/src/authoring-validation.js`
 - Markdown 场景导入器：`core/src/scene-markdown-import.js`
+- Markdown campaign/story pack 导入器：`core/src/campaign-story-markdown-import.js`
 
 ## 下一步
 1. 把 `advance` 从手动推进升级成更自动的 hook/条件驱动切幕

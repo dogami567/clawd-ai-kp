@@ -24,6 +24,7 @@ const { loadCampaignTemplate, getCampaignScene, listCampaignHooks, buildCampaign
 const { loadStoryPackTemplate, formatStoryPackSummary } = require("./story-pack-loader");
 const { validateCampaignTemplate, validateStoryPackTemplate } = require("./authoring-validation");
 const { importSceneMarkdown } = require("./scene-markdown-import");
+const { importCampaignMarkdown, importStoryPackMarkdown } = require("./campaign-story-markdown-import");
 const { normalizeText, routeOldChurchNightAction, routeScenarioAction, processScenarioTurn } = require("./scene-action-router");
 
 module.exports = {
@@ -91,6 +92,8 @@ module.exports = {
   validateCampaignTemplate,
   validateStoryPackTemplate,
   importSceneMarkdown,
+  importCampaignMarkdown,
+  importStoryPackMarkdown,
   normalizeText,
   routeOldChurchNightAction,
   routeScenarioAction,
