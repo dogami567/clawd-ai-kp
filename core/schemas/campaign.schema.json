@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://clawd-ai-kp.local/schemas/campaign.schema.json",
+  "title": "CampaignTemplate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "title", "summary", "startSceneId", "scenes"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "summary": { "type": "string", "minLength": 1 },
+    "startSceneId": { "type": "string", "minLength": 1 },
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sceneId", "title", "phase", "purpose", "hooks"],
+        "properties": {
+          "sceneId": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "phase": { "type": "string", "minLength": 1 },
+          "purpose": { "type": "string", "minLength": 1 },
+          "hooks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "label", "targetSceneId", "status"],
+              "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "label": { "type": "string", "minLength": 1 },
+                "targetSceneId": { "type": "string", "minLength": 1 },
+                "status": { "type": "string", "enum": ["planned", "draft", "disabled"] },
+                "conditions": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "minRevealedCoreClues": { "type": "integer", "minimum": 0 },
+                    "maxDangerLevel": { "type": "string", "enum": ["low", "medium", "high", "extreme"] },
+                    "minDangerLevel": { "type": "string", "enum": ["low", "medium", "high", "extreme"] },
+                    "requiredTriggeredEvents": { "type": "array", "items": { "type": "string" } },
+                    "requiredNpcFlags": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

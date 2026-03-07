@@ -1,9 +1,12 @@
 const { readFileSync } = require("fs");
 const { join } = require("path");
+const { validateStoryPackTemplate } = require("./authoring-validation");
 
 function loadStoryPackTemplate(storyPackId) {
   const filePath = join(__dirname, "..", "data", "story-packs", `${storyPackId}.story-pack.json`);
-  return JSON.parse(readFileSync(filePath, "utf8"));
+  const storyPack = JSON.parse(readFileSync(filePath, "utf8"));
+  validateStoryPackTemplate(storyPack);
+  return storyPack;
 }
 
 function formatStoryPackSummary(storyPack) {

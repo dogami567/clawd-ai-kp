@@ -22,6 +22,7 @@ const { validateInvestigatorCard, validateSceneState, validateCheckEvent, valida
 const { loadSceneTemplate, buildNpcRuntimeFromCard, buildScenarioNpcs, applySceneTemplate, seedSessionFromScenario } = require("./scene-loader");
 const { loadCampaignTemplate, getCampaignScene, listCampaignHooks, buildCampaignMeta, attachCampaignMeta, getCurrentCampaign, transitionCampaignScene, evaluateHookConditions, listEligibleHooks, autoAdvanceCampaign, formatCampaignSummary } = require("./campaign-loader");
 const { loadStoryPackTemplate, formatStoryPackSummary } = require("./story-pack-loader");
+const { validateCampaignTemplate, validateStoryPackTemplate } = require("./authoring-validation");
 const { normalizeText, routeOldChurchNightAction, routeScenarioAction, processScenarioTurn } = require("./scene-action-router");
 
 module.exports = {
@@ -86,6 +87,8 @@ module.exports = {
   formatCampaignSummary,
   loadStoryPackTemplate,
   formatStoryPackSummary,
+  validateCampaignTemplate,
+  validateStoryPackTemplate,
   normalizeText,
   routeOldChurchNightAction,
   routeScenarioAction,

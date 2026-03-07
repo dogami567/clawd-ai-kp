@@ -1,5 +1,6 @@
 const { readFileSync } = require("fs");
 const { join } = require("path");
+const { validateCampaignTemplate } = require("./authoring-validation");
 
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
@@ -7,7 +8,9 @@ function cloneJson(value) {
 
 function loadCampaignTemplate(campaignId) {
   const filePath = join(__dirname, "..", "data", "campaigns", `${campaignId}.campaign.json`);
-  return JSON.parse(readFileSync(filePath, "utf8"));
+  const campaign = JSON.parse(readFileSync(filePath, "utf8"));
+  validateCampaignTemplate(campaign);
+  return campaign;
 }
 
 function getCampaignScene(campaign, sceneId) {

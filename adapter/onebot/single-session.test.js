@@ -122,6 +122,14 @@ test("storypack and goto commands expose framework-level transitions", () => {
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
+test("authoring validators keep campaign and story pack loadable", () => {
+  const { loadCampaignTemplate, loadStoryPackTemplate } = require('../../core/src/index');
+  const campaign = loadCampaignTemplate('old-church-arc');
+  const storyPack = loadStoryPackTemplate('old-church-arc-pack');
+  assert.equal(campaign.id, 'old-church-arc');
+  assert.equal(storyPack.id, 'old-church-arc-pack');
+});
+
 test("hooks and advance commands support conditional transitions", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });

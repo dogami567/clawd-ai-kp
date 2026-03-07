@@ -120,6 +120,7 @@ node core/src/coc7-validation.test.js
 - Story Pack 骨架已落地：`core/data/story-packs/old-church-arc-pack.story-pack.json`
 - Campaign 现在支持 `hooks / advance / goto` 三种推进方式，用于验证多幕衔接
 - 作者输入格式说明：`docs/story-pack-authoring-v0.1.md`
+- 作者格式校验已接入 loader：`core/src/authoring-validation.js`
 
 ## 下一步
 1. 把 `advance` 从手动推进升级成更自动的 hook/条件驱动切幕
