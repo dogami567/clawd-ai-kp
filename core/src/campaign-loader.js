@@ -59,6 +59,62 @@ function transitionCampaignScene(sessionState, campaign, targetSceneId) {
   return sessionState.scene.meta.campaign;
 }
 
+function dangerRank(level = "low") {
+  return {
+    low: 1,
+    medium: 2,
+    high: 3,
+    extreme: 4
+  }[level] || 0;
+}
+
+function collectNpcFlags(sessionState) {
+  const flags = [];
+  for (const npc of sessionState.scene?.participants?.npcs || []) {
+    for (const flag of npc.socialState?.flags || []) flags.push(flag);
+  }
+  return flags;
+}
+
+function evaluateHookConditions(sessionState, hook) {
+  const conditions = hook.conditions || {};
+  const revealedCoreClues = (sessionState.scene?.clues || []).filter((item) => item.revealed && item.kind === "core").length;
+  const currentDanger = sessionState.scene?.threats?.dangerLevel || "low";
+  const triggeredLabels = (sessionState.scene?.events || []).filter((item) => item.triggered).map((item) => item.label);
+  const npcFlags = collectNpcFlags(sessionState);
+
+  if (conditions.minRevealedCoreClues != null && revealedCoreClues < conditions.minRevealedCoreClues) return false;
+  if (conditions.maxDangerLevel && dangerRank(currentDanger) > dangerRank(conditions.maxDangerLevel)) return false;
+  if (conditions.minDangerLevel && dangerRank(currentDanger) < dangerRank(conditions.minDangerLevel)) return false;
+  if (Array.isArray(conditions.requiredTriggeredEvents) && conditions.requiredTriggeredEvents.length) {
+    const matched = conditions.requiredTriggeredEvents.some((label) => triggeredLabels.includes(label));
+    if (!matched) return false;
+  }
+  if (Array.isArray(conditions.requiredNpcFlags) && conditions.requiredNpcFlags.length) {
+    const matched = conditions.requiredNpcFlags.some((flag) => npcFlags.includes(flag));
+    if (!matched) return false;
+  }
+  return true;
+}
+
+function listEligibleHooks(sessionState, campaign, sceneId) {
+  return listCampaignHooks(campaign, sceneId).map((hook) => ({
+    ...hook,
+    eligible: evaluateHookConditions(sessionState, hook)
+  }));
+}
+
+function autoAdvanceCampaign(sessionState, campaign, preferredHookId = null) {
+  const currentSceneId = sessionState.scene?.meta?.campaign?.currentSceneId || sessionState.scene?.meta?.scenarioId;
+  const hooks = listEligibleHooks(sessionState, campaign, currentSceneId);
+  const chosen = preferredHookId
+    ? hooks.find((hook) => hook.id === preferredHookId && hook.eligible)
+    : hooks.find((hook) => hook.eligible);
+  if (!chosen) return null;
+  transitionCampaignScene(sessionState, campaign, chosen.targetSceneId);
+  return chosen;
+}
+
 function formatCampaignSummary(campaignMeta) {
   if (!campaignMeta) return "当前这幕还没挂进 campaign。";
   const lines = [
@@ -83,5 +139,8 @@ module.exports = {
   attachCampaignMeta,
   getCurrentCampaign,
   transitionCampaignScene,
+  evaluateHookConditions,
+  listEligibleHooks,
+  autoAdvanceCampaign,
   formatCampaignSummary
 };

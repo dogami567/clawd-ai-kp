@@ -117,9 +117,11 @@ node core/src/coc7-validation.test.js
 - 行动回包已开始带 `状态变化 / 场上此刻 / 可选下一步 / 当前 spotlight` 的收尾句
 - 旧教堂正式单幕稿：`docs/old-church-night-final-v0.1.md`
 - Campaign 骨架已落地：`core/data/campaigns/old-church-arc.campaign.json`
-- Story Pack 骨架已落地：`core/data/story-packs/old-church-arc.story-pack.json`
+- Story Pack 骨架已落地：`core/data/story-packs/old-church-arc-pack.story-pack.json`
+- Campaign 现在支持 `hooks / advance / goto` 三种推进方式，用于验证多幕衔接
+- 作者输入格式说明：`docs/story-pack-authoring-v0.1.md`
 
 ## 下一步
-1. 接 OneBot 指令路由（先打通单群单会话）
-2. 把场景包和玩家自然语言 action 路由接起来
-3. 继续补隐藏检定输出分层与更细的 keeper 文本组织
+1. 把 `advance` 从手动推进升级成更自动的 hook/条件驱动切幕
+2. 把 story pack / campaign / scene 作者输入格式继续稳定下来
+3. 把这套通用框架接进真实消息链，而不是只停在 adapter 模块测试层

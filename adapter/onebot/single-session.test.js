@@ -122,6 +122,20 @@ test("storypack and goto commands expose framework-level transitions", () => {
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
+test("hooks and advance commands support conditional transitions", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  const hooksBefore = handleOneBotMessage(makeEvent("/aikp hooks"), { storageRoot });
+  assert.equal(hooksBefore.ok, true);
+  assert.match(hooksBefore.reply, /withdraw-with-clues/);
+  handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
+  const advance = handleOneBotMessage(makeEvent("/aikp advance"), { storageRoot });
+  assert.equal(advance.ok, true);
+  assert.match(advance.reply, /把这幕往后推进了/);
+  assert.match(advance.reply, /当前场景：bell-tower-followup/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
 test("scene and recap commands show environment and stage summary", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });

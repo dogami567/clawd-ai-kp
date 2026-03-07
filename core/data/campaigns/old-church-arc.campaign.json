@@ -14,19 +14,30 @@
           "id": "withdraw-with-clues",
           "label": "带着线索撤出，准备查钟楼或失踪者主线",
           "targetSceneId": "bell-tower-followup",
-          "status": "planned"
+          "status": "planned",
+          "conditions": {
+            "minRevealedCoreClues": 1,
+            "maxDangerLevel": "high"
+          }
         },
         {
           "id": "take-key-evidence",
           "label": "拿到钥匙或相关证据，进入下一幕",
           "targetSceneId": "bell-tower-followup",
-          "status": "planned"
+          "status": "planned",
+          "conditions": {
+            "requiredNpcFlags": ["reasoned_with", "took_money"]
+          }
         },
         {
           "id": "retreat-after-awakening",
           "label": "惊醒深处之物后撤退，但真相更近一步",
           "targetSceneId": "underchurch-aftershock",
-          "status": "planned"
+          "status": "planned",
+          "conditions": {
+            "requiredTriggeredEvents": ["教堂深处有东西苏醒", "祭坛下的脆响把教堂深处的东西惊醒了"],
+            "minDangerLevel": "medium"
+          }
         }
       ]
     }

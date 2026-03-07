@@ -18,6 +18,8 @@ const {
   formatCampaignSummary,
   getCurrentCampaign,
   transitionCampaignScene,
+  listEligibleHooks,
+  autoAdvanceCampaign,
   loadStoryPackTemplate,
   formatStoryPackSummary
 } = require("../../core/src/index");
@@ -744,6 +746,8 @@ function formatHelpReply() {
     "- /aikp sheet 查看自己的调查员卡",
     "- /aikp state 查看当前场景状态",
     "- /aikp campaign 查看当前故事弧与预留钩子",
+    "- /aikp hooks 查看当前可用推进钩子",
+    "- /aikp advance [hookId] 按钩子推进到下一幕",
     "- /aikp storypack 查看当前故事包摘要",
     "- /aikp goto <sceneId> 切到下一幕骨架场景",
     "- /aikp scene 查看场景环境面板",
@@ -855,6 +859,17 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
   if (text.trim() === "/aikp campaign") {
     return { reply: formatCampaignSummary(getCurrentCampaign(stateBundle.sessionState)) };
   }
+  if (text.trim() === "/aikp hooks") {
+    const campaignId = stateBundle.meta.campaignId || "old-church-arc";
+    const campaign = loadCampaignTemplate(campaignId);
+    const sceneId = getCurrentCampaign(stateBundle.sessionState)?.currentSceneId || stateBundle.sessionState.scene?.meta?.scenarioId;
+    const hooks = listEligibleHooks(stateBundle.sessionState, campaign, sceneId);
+    const lines = ["当前钩子："];
+    for (const hook of hooks) {
+      lines.push(`- ${hook.id}｜${hook.label}｜${hook.eligible ? "eligible" : "locked"}`);
+    }
+    return { reply: lines.join("\n") };
+  }
   if (text.trim() === "/aikp storypack") {
     return { reply: formatStoryPackSummary(loadStoryPackTemplate("old-church-arc-pack")) };
   }
@@ -941,6 +956,18 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
     transitionCampaignScene(stateBundle.sessionState, campaign, targetSceneId);
     saveSessionApi(stateBundle.sessionState, stateBundle.layout.sessionFile, { meta: { conversationKey: stateBundle.layout.conversationKey } });
     return { reply: `好，这幕我先切到 ${targetSceneId} 了。\n${formatCampaignSummary(getCurrentCampaign(stateBundle.sessionState))}` };
+  }
+
+  if (command === "/aikp" && args[0] === "advance") {
+    const preferredHookId = args[1] || null;
+    const campaignId = stateBundle.meta.campaignId || "old-church-arc";
+    const campaign = loadCampaignTemplate(campaignId);
+    const chosen = autoAdvanceCampaign(stateBundle.sessionState, campaign, preferredHookId);
+    if (!chosen) {
+      return { reply: "这会儿还没有满足条件的下一幕钩子。先继续推进，或者用 `/aikp hooks` 看当前哪些是锁着的。" };
+    }
+    saveSessionApi(stateBundle.sessionState, stateBundle.layout.sessionFile, { meta: { conversationKey: stateBundle.layout.conversationKey } });
+    return { reply: `好，我按钩子 ${chosen.id} 把这幕往后推进了。\n${formatCampaignSummary(getCurrentCampaign(stateBundle.sessionState))}` };
   }
 
   if (command === "/aikp" && args[0] === "next") {
