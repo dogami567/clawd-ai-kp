@@ -7,7 +7,8 @@ const {
   saveSessionApi,
   loadSessionApi,
   createCharacter,
-  processScenarioTurn
+  processScenarioTurn,
+  settleSessionApi
 } = require("../../core/src/index");
 
 function cloneJson(value) {
@@ -163,6 +164,14 @@ function formatStateSummary(sessionState) {
   return lines.join("\n");
 }
 
+function formatCheckResultLine(event) {
+  if (!event?.result) return null;
+  if (event.mode === "hidden") {
+    return `暗骰：${event.skillKey}（${event.result.successLevel}）`;
+  }
+  return `检定：${event.skillKey} ${event.roll}/${event.targetValue}（${event.result.successLevel}）`;
+}
+
 function formatTurnReply(result) {
   if (!result) return "这下我没接住，怪。";
   const parts = [];
@@ -171,9 +180,8 @@ function formatTurnReply(result) {
   if (result.preRollLine) parts.push(result.preRollLine);
   if (result.postRollLine) parts.push(result.postRollLine);
   if (result.narrativeLine) parts.push(result.narrativeLine);
-  if (result.event?.mode !== "hidden" && result.event?.result) {
-    parts.push(`检定：${result.event.skillKey} ${result.event.roll}/${result.event.targetValue}（${result.event.result.successLevel}）`);
-  }
+  const checkResultLine = formatCheckResultLine(result.event);
+  if (checkResultLine) parts.push(checkResultLine);
   if (result.event?.outcome?.nextPrompt) parts.push(result.event.outcome.nextPrompt);
   return parts.filter(Boolean).join("\n");
 }
@@ -183,11 +191,34 @@ function formatStartReply(stateBundle, actorResult) {
   const prompts = stateBundle.sessionState.scene.meta?.starterPrompts || [];
   const joinLine = actorResult?.created ? `已帮你入场，调查员是 ${actorResult.investigator.name}。` : "你已经在场里了。";
   const promptLine = prompts.length ? `你可以直接试这些：\n- ${prompts.join("\n- ")}` : "你现在可以直接说行动。";
-  return [joinLine, opening, promptLine].join("\n");
+  const helpLine = "可用指令：/aikp state /aikp help /aikp settle /aikp reset";
+  return [joinLine, opening, promptLine, helpLine].join("\n");
+}
+
+function formatHelpReply() {
+  return [
+    "AI-KP 可用指令：",
+    "- /aikp start 重新开场",
+    "- /aikp join 确认当前调查员",
+    "- /aikp state 查看当前场景状态",
+    "- /aikp settle 生成本轮结团摘要",
+    "- /aikp reset 重开当前场景",
+    "平时直接发行动句子就行，比如：查祭坛、聊守墓人、临符号、掀木板。"
+  ].join("\n");
+}
+
+function formatSettlementReply(settlement) {
+  const lines = ["这轮先帮你收一下："];
+  if (Array.isArray(settlement.summaryLines)) lines.push(...settlement.summaryLines);
+  lines.push(`事件数：${settlement.eventCount}`);
+  return lines.join("\n");
 }
 
 function handleCommand(text, event, stateBundle, actorResult) {
   const normalized = text.trim();
+  if (normalized === "/aikp help") {
+    return { reply: formatHelpReply() };
+  }
   if (normalized === "/aikp state") {
     return { reply: formatStateSummary(stateBundle.sessionState) };
   }
@@ -198,6 +229,11 @@ function handleCommand(text, event, stateBundle, actorResult) {
   }
   if (normalized === "/aikp join") {
     return { reply: actorResult.created ? `好呀，你已经进场啦：${actorResult.investigator.name}` : `你已经在场里了，调查员是 ${stateBundle.sessionState.investigators[actorResult.actorId].name}` };
+  }
+  if (normalized === "/aikp settle") {
+    const settlement = settleSessionApi(stateBundle.sessionState);
+    saveSessionApi(stateBundle.sessionState, stateBundle.layout.sessionFile, { meta: { conversationKey: stateBundle.layout.conversationKey } });
+    return { reply: formatSettlementReply(settlement) };
   }
   return null;
 }
@@ -277,6 +313,8 @@ module.exports = {
   formatStateSummary,
   formatTurnReply,
   formatStartReply,
+  formatHelpReply,
+  formatSettlementReply,
   handleOneBotMessage,
   rebuildConversationSession
 };

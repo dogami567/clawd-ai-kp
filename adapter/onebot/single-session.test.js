@@ -49,6 +49,36 @@ test('returns state summary command', () => {
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
+test('returns help command text', () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), 'aikp-onebot-'));
+  handleOneBotMessage(makeEvent('/aikp help'), { storageRoot });
+  const result = handleOneBotMessage(makeEvent('/aikp help'), { storageRoot });
+  assert.equal(result.ok, true);
+  assert.match(result.reply, /AI-KP 可用指令/);
+  assert.match(result.reply, /\/aikp settle/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test('settle command returns summary lines', () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), 'aikp-onebot-'));
+  handleOneBotMessage(makeEvent('我借着手电去看祭坛背后的刮痕'), { storageRoot, randomInt: () => 28 });
+  const result = handleOneBotMessage(makeEvent('/aikp settle'), { storageRoot });
+  assert.equal(result.ok, true);
+  assert.match(result.reply, /这轮先帮你收一下/);
+  assert.match(result.reply, /线索共拿到/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test('hidden checks stay hidden in reply line', () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), 'aikp-onebot-'));
+  handleOneBotMessage(makeEvent('我借着手电去看祭坛背后的刮痕'), { storageRoot, randomInt: () => 28 });
+  const result = handleOneBotMessage(makeEvent('我直接把祭坛下面那块木板掀开'), { storageRoot, randomInt: () => 81 });
+  assert.equal(result.ok, true);
+  assert.match(result.reply, /暗骰：Fighting/);
+  assert.doesNotMatch(result.reply, /81\/35/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
 test('reset command rebuilds session state', () => {
   const storageRoot = mkdtempSync(join(tmpdir(), 'aikp-onebot-'));
   handleOneBotMessage(makeEvent('我借着手电去看祭坛背后的刮痕'), { storageRoot, randomInt: () => 28 });
