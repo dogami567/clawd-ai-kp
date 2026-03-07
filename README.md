@@ -110,6 +110,7 @@ node core/src/coc7-validation.test.js
 - 可复用场景包：`core/data/scenes/old-church-night.scene.json`
 - 旧教堂场景自然语言动作路由：`core/src/scene-action-router.js`
 - OneBot 单群单会话胶水层：`adapter/onebot/single-session.js`
+- 正式车卡流已接入 OneBot：支持单人 `/aikp roll`、`/aikp quickfire` 与批量 `/aikp party-roll`
 
 ## 下一步
 1. 接 OneBot 指令路由（先打通单群单会话）

@@ -7,9 +7,14 @@ const {
   saveSessionApi,
   loadSessionApi,
   createCharacter,
+  createInvestigatorFromTraditional,
+  generateTraditionalAttributes,
+  getOccupationTemplate,
+  QUICK_FIRE_VALUES,
   processScenarioTurn,
   settleSessionApi
 } = require("../../core/src/index");
+const { resolveSkillDefault } = require("../../core/src/skill-defaults");
 
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
@@ -67,49 +72,32 @@ function saveMeta(layout, meta) {
   return meta;
 }
 
-function createDefaultInvestigator(event, overrides = {}) {
-  const userId = String(event.user_id || "guest");
-  const name = getSenderName(event);
-  return createCharacter({
-    id: `pc-onebot-${sanitizeSegment(userId)}`,
-    name,
-    age: 26,
-    occupationKey: "journalist",
-    creditRating: 20,
-    persona: "眼睛尖，嘴不算慢，遇到怪事会先记再追。",
-    motivation: "想把眼前这摊怪事追出个所以然。",
-    era: "depression_era_1920s",
-    residence: "Arkham",
-    birthplace: "Boston",
-    luck: 55,
-    attributeAssignments: { STR: 50, CON: 50, DEX: 60, APP: 60, POW: 50, INT: 70, SIZ: 40, EDU: 80 },
-    skills: [
-      { key: "Spot Hidden", value: 65, baseValue: 25, occupationPointsSpent: 40, interestPointsSpent: 0, tag: "investigation" },
-      { key: "Persuade", value: 60, baseValue: 10, occupationPointsSpent: 30, interestPointsSpent: 20, tag: "social" },
-      { key: "Psychology", value: 50, baseValue: 10, occupationPointsSpent: 20, interestPointsSpent: 20, tag: "investigation" },
-      { key: "Listen", value: 40, baseValue: 20, occupationPointsSpent: 20, interestPointsSpent: 0, tag: "investigation" },
-      { key: "Fighting", value: 35, baseValue: 25, occupationPointsSpent: 0, interestPointsSpent: 10, tag: "action" },
-      { key: "Stealth", value: 35, baseValue: 20, occupationPointsSpent: 0, interestPointsSpent: 15, tag: "action" }
-    ],
-    inventory: [
-      { name: "手电", category: "tool", quantity: 1 },
-      { name: "笔记本", category: "tool", quantity: 1 },
-      { name: "素描本", category: "tool", quantity: 1 }
-    ],
-    ...overrides
-  });
+function rememberUser(meta, event) {
+  meta.knownUsers = Array.isArray(meta.knownUsers) ? meta.knownUsers : [];
+  if (!event.user_id) return meta;
+  const userId = String(event.user_id);
+  const existing = meta.knownUsers.find((item) => item.userId === userId);
+  if (existing) {
+    existing.name = getSenderName(event);
+  } else {
+    meta.knownUsers.push({ userId, name: getSenderName(event) });
+  }
+  return meta;
 }
 
 function buildInitialMeta(event, layout, scenarioId) {
-  return {
+  const meta = {
     conversationKey: layout.conversationKey,
     sessionFile: layout.sessionFile,
     scenarioId,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     actorsByUserId: {},
+    knownUsers: [],
     messageCount: 0
   };
+  rememberUser(meta, event);
+  return meta;
 }
 
 function ensureConversationSession(event, options = {}) {
@@ -120,6 +108,8 @@ function ensureConversationSession(event, options = {}) {
 
   if (meta && existsSync(layout.sessionFile)) {
     sessionState = loadSessionApi(layout.sessionFile);
+    rememberUser(meta, event);
+    saveMeta(layout, meta);
     return { layout, meta, sessionState, created: false };
   }
 
@@ -133,19 +123,259 @@ function ensureConversationSession(event, options = {}) {
   return { layout, meta, sessionState, created: true };
 }
 
+function rebuildConversationSession(event, options = {}) {
+  const layout = buildStorageLayout(options.storageRoot, event);
+  const scenarioId = options.scenarioId || "old-church-night";
+  const sessionState = startSessionApi({ sessionId: `onebot-${layout.conversationKey}`, scenarioId });
+  const meta = buildInitialMeta(event, layout, scenarioId);
+  saveSessionApi(sessionState, layout.sessionFile, { meta: { conversationKey: layout.conversationKey } });
+  saveMeta(layout, meta);
+  return { layout, meta, sessionState, created: true };
+}
+
+function maybeResetSession(event, options = {}) {
+  if (!options.reset) return ensureConversationSession(event, options);
+  return rebuildConversationSession(event, options);
+}
+
+function calculateOccupationBudget(attributes, formula) {
+  if (formula === "EDUx4") return attributes.EDU * 4;
+  if (formula === "EDUx2+DEXx2") return (attributes.EDU * 2) + (attributes.DEX * 2);
+  if (formula === "EDUx2+APPx2") return (attributes.EDU * 2) + (attributes.APP * 2);
+  if (formula === "EDUx2+STRx2") return (attributes.EDU * 2) + (attributes.STR * 2);
+  return attributes.EDU * 4;
+}
+
+function uniqueList(values = []) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function guessSkillTag(skillKey = "") {
+  if (["Spot Hidden", "Listen", "Psychology", "Library Use", "History", "Law", "Science", "Science (Biology)", "Science (Pharmacy)", "Own Language", "Language (Other)", "Medicine", "First Aid"].includes(skillKey)) {
+    return "investigation";
+  }
+  if (["Persuade", "Fast Talk", "Charm", "Intimidate", "Credit Rating", "Psychology"].includes(skillKey)) {
+    return "social";
+  }
+  if (["Fighting", "Firearms", "Stealth", "Dodge", "Climb", "Throw", "Survival", "Disguise", "Locksmith"].includes(skillKey)) {
+    return "action";
+  }
+  return "other";
+}
+
+function normalizeSuggestedSkills(skills = []) {
+  return uniqueList(skills.map((skill) => {
+    if (skill === "Any Interpersonal") return "Persuade";
+    return skill;
+  }));
+}
+
+function allocatePool(skillMap, keys, field, budget, capMap = {}) {
+  let remaining = budget;
+  let safety = 0;
+
+  while (remaining >= 5 && safety < 2000) {
+    safety += 1;
+    let progressed = false;
+
+    for (const key of keys) {
+      if (remaining < 5) break;
+      const skill = skillMap.get(key);
+      if (!skill) continue;
+      const current = skill.baseValue + skill.occupationPointsSpent + skill.interestPointsSpent;
+      const cap = capMap[key] ?? 75;
+      if (current >= cap) continue;
+      skill[field] += 5;
+      remaining -= 5;
+      progressed = true;
+    }
+
+    if (!progressed) break;
+  }
+
+  return remaining;
+}
+
+function buildStarterSkills(attributes, occupation, creditRating) {
+  const occupationSkills = normalizeSuggestedSkills(occupation.suggestedSkills || []);
+  const interestSkills = uniqueList([
+    ...occupationSkills,
+    "Spot Hidden",
+    "Listen",
+    "Psychology",
+    "Persuade",
+    "Stealth",
+    "Fighting",
+    "Library Use",
+    "First Aid"
+  ]);
+
+  const skillMap = new Map();
+  const ensureSkill = (key) => {
+    if (!skillMap.has(key)) {
+      skillMap.set(key, {
+        key,
+        tag: guessSkillTag(key),
+        baseValue: resolveSkillDefault(key, { attributes }),
+        occupationPointsSpent: 0,
+        interestPointsSpent: 0
+      });
+    }
+    return skillMap.get(key);
+  };
+
+  occupationSkills.forEach(ensureSkill);
+  interestSkills.forEach(ensureSkill);
+
+  const occupationBudget = calculateOccupationBudget(attributes, occupation.occupationSkillFormula);
+  const interestBudget = attributes.INT * 2;
+
+  let remainingOccupation = occupationBudget;
+  if (skillMap.has("Credit Rating")) {
+    const creditSkill = skillMap.get("Credit Rating");
+    const needed = Math.max(0, creditRating - creditSkill.baseValue);
+    const allocated = Math.min(needed, remainingOccupation);
+    creditSkill.occupationPointsSpent += allocated;
+    remainingOccupation -= allocated;
+  }
+
+  allocatePool(skillMap, occupationSkills, "occupationPointsSpent", remainingOccupation, {
+    "Credit Rating": Math.max(creditRating, 75),
+    "Own Language": 90
+  });
+  allocatePool(skillMap, interestSkills, "interestPointsSpent", interestBudget, {
+    "Own Language": 90
+  });
+
+  return Array.from(skillMap.values()).map((skill) => ({
+    ...skill,
+    value: Math.min(99, skill.baseValue + skill.occupationPointsSpent + skill.interestPointsSpent)
+  }));
+}
+
+function pickCreditRating(occupation) {
+  const [min, max] = occupation.creditRatingRange || [0, 20];
+  return Math.floor((min + max) / 2);
+}
+
+function shuffleQuickFireAssignments(randomInt = defaultRandomInt) {
+  const pool = [...QUICK_FIRE_VALUES];
+  const keys = ["STR", "CON", "DEX", "APP", "POW", "INT", "SIZ", "EDU"];
+  const assignments = {};
+
+  for (const key of keys) {
+    const index = randomInt(0, pool.length - 1);
+    assignments[key] = pool.splice(index, 1)[0];
+  }
+
+  return assignments;
+}
+
+function buildGeneratedBase(event, occupationKey) {
+  const name = getSenderName(event);
+  return {
+    id: `pc-onebot-${sanitizeSegment(event.user_id || "guest")}`,
+    name,
+    age: 26,
+    occupationKey,
+    persona: "眼睛尖，脑子转得快，遇到怪事不会轻易撒手。",
+    motivation: "想把眼前这摊怪事查出个真相。",
+    era: "depression_era_1920s",
+    residence: "Arkham",
+    birthplace: "Boston"
+  };
+}
+
+function createRolledInvestigator(event, occupationKey = "journalist", randomInt = defaultRandomInt) {
+  const occupation = getOccupationTemplate(occupationKey);
+  const rolled = generateTraditionalAttributes(randomInt);
+  const attributes = {
+    STR: rolled.STR,
+    CON: rolled.CON,
+    DEX: rolled.DEX,
+    APP: rolled.APP,
+    POW: rolled.POW,
+    SIZ: rolled.SIZ,
+    INT: rolled.INT,
+    EDU: rolled.EDU,
+    Luck: rolled.Luck
+  };
+  const creditRating = pickCreditRating(occupation);
+  const skills = buildStarterSkills(attributes, occupation, creditRating);
+
+  return createInvestigatorFromTraditional({
+    ...buildGeneratedBase(event, occupationKey),
+    creditRating,
+    luck: rolled.Luck,
+    attributeAssignments: {
+      STR: rolled.STR,
+      CON: rolled.CON,
+      DEX: rolled.DEX,
+      APP: rolled.APP,
+      POW: rolled.POW,
+      SIZ: rolled.SIZ,
+      INT: rolled.INT,
+      EDU: rolled.EDU
+    },
+    skills,
+    inventory: [
+      { name: "手电", category: "tool", quantity: 1 },
+      { name: "笔记本", category: "tool", quantity: 1 }
+    ]
+  }, randomInt);
+}
+
+function createQuickfireInvestigator(event, occupationKey = "journalist", randomInt = defaultRandomInt) {
+  const occupation = getOccupationTemplate(occupationKey);
+  const attributeAssignments = shuffleQuickFireAssignments(randomInt);
+  const luck = 55;
+  const creditRating = pickCreditRating(occupation);
+  const skills = buildStarterSkills({ ...attributeAssignments, Luck: luck }, occupation, creditRating);
+
+  return createCharacter({
+    ...buildGeneratedBase(event, occupationKey),
+    creditRating,
+    luck,
+    attributeAssignments,
+    skills,
+    inventory: [
+      { name: "手电", category: "tool", quantity: 1 },
+      { name: "笔记本", category: "tool", quantity: 1 }
+    ]
+  });
+}
+
+function getActorForUser(stateBundle, userId) {
+  const actorId = stateBundle.meta.actorsByUserId[String(userId)];
+  return actorId ? stateBundle.sessionState.investigators[actorId] : null;
+}
+
+function upsertInvestigatorForUser(event, stateBundle, investigator) {
+  addInvestigator(stateBundle.sessionState, investigator);
+  stateBundle.meta.actorsByUserId[String(event.user_id || "guest")] = investigator.id;
+  stateBundle.meta.updatedAt = new Date().toISOString();
+  saveSessionApi(stateBundle.sessionState, stateBundle.layout.sessionFile, { meta: { conversationKey: stateBundle.layout.conversationKey } });
+  saveMeta(stateBundle.layout, stateBundle.meta);
+  return investigator;
+}
+
+function createDefaultInvestigator(event, overrides = {}) {
+  return createQuickfireInvestigator(event, overrides.occupationKey || "journalist", overrides.randomInt || defaultRandomInt);
+}
+
 function ensureActorForUser(event, stateBundle, options = {}) {
   const userId = String(event.user_id || "guest");
   const mappedActorId = stateBundle.meta.actorsByUserId[userId];
   if (mappedActorId && stateBundle.sessionState.investigators[mappedActorId]) {
-    return { actorId: mappedActorId, created: false };
+    return { actorId: mappedActorId, created: false, investigator: stateBundle.sessionState.investigators[mappedActorId] };
+  }
+
+  if (!options.autoCreateInvestigator) {
+    return { actorId: null, created: false, investigator: null };
   }
 
   const investigator = createDefaultInvestigator(event, options.investigatorOverrides || {});
-  addInvestigator(stateBundle.sessionState, investigator);
-  stateBundle.meta.actorsByUserId[userId] = investigator.id;
-  stateBundle.meta.updatedAt = new Date().toISOString();
-  saveSessionApi(stateBundle.sessionState, stateBundle.layout.sessionFile, { meta: { conversationKey: stateBundle.layout.conversationKey } });
-  saveMeta(stateBundle.layout, stateBundle.meta);
+  upsertInvestigatorForUser(event, stateBundle, investigator);
   return { actorId: investigator.id, created: true, investigator };
 }
 
@@ -186,12 +416,31 @@ function formatTurnReply(result) {
   return parts.filter(Boolean).join("\n");
 }
 
+function formatInvestigatorSummary(investigator) {
+  if (!investigator) return "你现在还没有调查员卡。";
+  const skillBits = investigator.skills
+    .slice()
+    .sort((left, right) => right.value - left.value)
+    .slice(0, 4)
+    .map((skill) => `${skill.key} ${skill.value}`)
+    .join("、");
+  return [
+    `${investigator.name}｜${investigator.occupation}`,
+    `年龄：${investigator.age}｜信用评级：${investigator.identity.creditRating}`,
+    `属性：STR ${investigator.attributes.STR} / CON ${investigator.attributes.CON} / DEX ${investigator.attributes.DEX} / POW ${investigator.attributes.POW} / INT ${investigator.attributes.INT} / EDU ${investigator.attributes.EDU}`,
+    `资源：HP ${investigator.resources.hp} / SAN ${investigator.resources.san} / MOV ${investigator.resources.moveRate}`,
+    `擅长：${skillBits}`
+  ].join("\n");
+}
+
 function formatStartReply(stateBundle, actorResult) {
   const opening = stateBundle.sessionState.scene.meta?.opening || "场景已经起好了。";
   const prompts = stateBundle.sessionState.scene.meta?.starterPrompts || [];
-  const joinLine = actorResult?.created ? `已帮你入场，调查员是 ${actorResult.investigator.name}。` : "你已经在场里了。";
-  const promptLine = prompts.length ? `你可以直接试这些：\n- ${prompts.join("\n- ")}` : "你现在可以直接说行动。";
-  const helpLine = "可用指令：/aikp state /aikp help /aikp settle /aikp reset";
+  const joinLine = actorResult?.investigator
+    ? `当前绑定调查员：${actorResult.investigator.name}。`
+    : "你现在还没车卡，先建卡再入场会更像真跑团。";
+  const promptLine = prompts.length ? `场景里可以直接试这些：\n- ${prompts.join("\n- ")}` : "你现在可以直接说行动。";
+  const helpLine = "先建卡：/aikp roll journalist 或 /aikp quickfire artist；批量：/aikp party-roll journalist";
   return [joinLine, opening, promptLine, helpLine].join("\n");
 }
 
@@ -199,11 +448,16 @@ function formatHelpReply() {
   return [
     "AI-KP 可用指令：",
     "- /aikp start 重新开场",
+    "- /aikp roll <occupationKey> 单人传统随机车卡",
+    "- /aikp quickfire <occupationKey> 单人快速车卡",
+    "- /aikp party-roll <occupationKey> 为当前已出现玩家批量传统随机车卡",
+    "- /aikp party-quickfire <occupationKey> 为当前已出现玩家批量快速车卡",
     "- /aikp join 确认当前调查员",
+    "- /aikp sheet 查看自己的调查员卡",
     "- /aikp state 查看当前场景状态",
     "- /aikp settle 生成本轮结团摘要",
     "- /aikp reset 重开当前场景",
-    "平时直接发行动句子就行，比如：查祭坛、聊守墓人、临符号、掀木板。"
+    "职业 key 可先用：journalist detective doctor professor artist veteran dilettante"
   ].join("\n");
 }
 
@@ -214,49 +468,142 @@ function formatSettlementReply(settlement) {
   return lines.join("\n");
 }
 
-function handleCommand(text, event, stateBundle, actorResult) {
-  const normalized = text.trim();
-  if (normalized === "/aikp help") {
+function parseCommand(text) {
+  const tokens = text.trim().split(/\s+/).filter(Boolean);
+  return {
+    command: tokens[0] || "",
+    args: tokens.slice(1)
+  };
+}
+
+function resolveOccupationKey(rawValue, fallback = "journalist") {
+  if (!rawValue) return fallback;
+  try {
+    getOccupationTemplate(rawValue);
+    return rawValue;
+  } catch {
+    return fallback;
+  }
+}
+
+function createInvestigatorForMode(event, mode, occupationKey, randomInt) {
+  if (mode === "quickfire") {
+    return createQuickfireInvestigator(event, occupationKey, randomInt);
+  }
+  return createRolledInvestigator(event, occupationKey, randomInt);
+}
+
+function formatPartyRollReply(createdInvestigators, mode) {
+  const modeText = mode === "quickfire" ? "快速车卡" : "传统随机车卡";
+  const lines = [`这轮我已经帮当前这批玩家批量做了 ${modeText}：`];
+  for (const investigator of createdInvestigators) {
+    lines.push(`- ${investigator.name}｜${investigator.occupation}｜HP ${investigator.resources.hp}｜SAN ${investigator.resources.san}`);
+  }
+  return lines.join("\n");
+}
+
+function runSingleRollCommand(event, stateBundle, mode, occupationKey, randomInt) {
+  const investigator = createInvestigatorForMode(event, mode, occupationKey, randomInt);
+  upsertInvestigatorForUser(event, stateBundle, investigator);
+  const modeText = mode === "quickfire" ? "快速车卡" : "传统随机车卡";
+  return `${modeText} 已经给你落好了：\n${formatInvestigatorSummary(investigator)}`;
+}
+
+function runPartyRollCommand(stateBundle, mode, occupationKey, randomInt) {
+  const createdInvestigators = [];
+  const knownUsers = Array.isArray(stateBundle.meta.knownUsers) ? stateBundle.meta.knownUsers : [];
+
+  for (const user of knownUsers) {
+    const fakeEvent = {
+      user_id: user.userId,
+      sender: { nickname: user.name }
+    };
+    const existing = getActorForUser(stateBundle, user.userId);
+    const resolvedOccupation = occupationKey || existing?.occupationKey || "journalist";
+    const investigator = createInvestigatorForMode(fakeEvent, mode, resolvedOccupation, randomInt);
+    addInvestigator(stateBundle.sessionState, investigator);
+    stateBundle.meta.actorsByUserId[String(user.userId)] = investigator.id;
+    createdInvestigators.push(investigator);
+  }
+
+  stateBundle.meta.updatedAt = new Date().toISOString();
+  saveSessionApi(stateBundle.sessionState, stateBundle.layout.sessionFile, { meta: { conversationKey: stateBundle.layout.conversationKey } });
+  saveMeta(stateBundle.layout, stateBundle.meta);
+  return formatPartyRollReply(createdInvestigators, mode);
+}
+
+function handleCommand(text, event, stateBundle, actorResult, options = {}) {
+  const { command, args } = parseCommand(text);
+  const randomInt = options.randomInt || defaultRandomInt;
+
+  if (command === "/aikp" && !args.length) {
     return { reply: formatHelpReply() };
   }
-  if (normalized === "/aikp state") {
+
+  if (command === "/aikp" && args[0] === "help") {
+    return { reply: formatHelpReply() };
+  }
+
+  if (text.trim() === "/aikp help") {
+    return { reply: formatHelpReply() };
+  }
+
+  if (text.trim() === "/aikp state") {
     return { reply: formatStateSummary(stateBundle.sessionState) };
   }
-  if (normalized === "/aikp start" || normalized === "/aikp reset") {
+
+  if (text.trim() === "/aikp start" || text.trim() === "/aikp reset") {
     const fresh = rebuildConversationSession(event, { storageRoot: stateBundle.layout.root, scenarioId: stateBundle.meta.scenarioId, reset: true });
-    const actor = ensureActorForUser(event, fresh);
+    const actor = ensureActorForUser(event, fresh, { autoCreateInvestigator: false });
     return { reply: formatStartReply(fresh, actor), stateBundle: fresh };
   }
-  if (normalized === "/aikp join") {
-    return { reply: actorResult.created ? `好呀，你已经进场啦：${actorResult.investigator.name}` : `你已经在场里了，调查员是 ${stateBundle.sessionState.investigators[actorResult.actorId].name}` };
+
+  if (text.trim() === "/aikp join") {
+    if (!actorResult.investigator) {
+      return { reply: "你现在还没绑定调查员。先用 `/aikp roll journalist` 或 `/aikp quickfire artist` 来一张卡。" };
+    }
+    return { reply: `你已经在场里了，当前调查员是 ${actorResult.investigator.name}。` };
   }
-  if (normalized === "/aikp settle") {
+
+  if (text.trim() === "/aikp sheet") {
+    return { reply: formatInvestigatorSummary(actorResult.investigator) };
+  }
+
+  if (text.trim() === "/aikp settle") {
     const settlement = settleSessionApi(stateBundle.sessionState);
     saveSessionApi(stateBundle.sessionState, stateBundle.layout.sessionFile, { meta: { conversationKey: stateBundle.layout.conversationKey } });
     return { reply: formatSettlementReply(settlement) };
   }
+
+  if (command === "/aikp" && args[0] === "roll") {
+    const occupationKey = resolveOccupationKey(args[1], actorResult.investigator?.occupationKey || "journalist");
+    return { reply: runSingleRollCommand(event, stateBundle, "traditional", occupationKey, randomInt) };
+  }
+
+  if (command === "/aikp" && args[0] === "quickfire") {
+    const occupationKey = resolveOccupationKey(args[1], actorResult.investigator?.occupationKey || "journalist");
+    return { reply: runSingleRollCommand(event, stateBundle, "quickfire", occupationKey, randomInt) };
+  }
+
+  if (command === "/aikp" && args[0] === "party-roll") {
+    const occupationKey = args[1] ? resolveOccupationKey(args[1], "journalist") : null;
+    return { reply: runPartyRollCommand(stateBundle, "traditional", occupationKey, randomInt) };
+  }
+
+  if (command === "/aikp" && args[0] === "party-quickfire") {
+    const occupationKey = args[1] ? resolveOccupationKey(args[1], "journalist") : null;
+    return { reply: runPartyRollCommand(stateBundle, "quickfire", occupationKey, randomInt) };
+  }
+
   return null;
-}
-
-function rebuildConversationSession(event, options = {}) {
-  const layout = buildStorageLayout(options.storageRoot, event);
-  const scenarioId = options.scenarioId || "old-church-night";
-  const sessionState = startSessionApi({ sessionId: `onebot-${layout.conversationKey}`, scenarioId });
-  const meta = buildInitialMeta(event, layout, scenarioId);
-  saveSessionApi(sessionState, layout.sessionFile, { meta: { conversationKey: layout.conversationKey } });
-  saveMeta(layout, meta);
-  return { layout, meta, sessionState, created: true };
-}
-
-function maybeResetSession(event, options = {}) {
-  if (!options.reset) return ensureConversationSession(event, options);
-  return rebuildConversationSession(event, options);
 }
 
 function handleOneBotMessage(event, options = {}) {
   const text = getMessageText(event);
   const stateBundle = maybeResetSession(event, options);
-  const actorResult = ensureActorForUser(event, stateBundle, options);
+  rememberUser(stateBundle.meta, event);
+  saveMeta(stateBundle.layout, stateBundle.meta);
+  const actorResult = ensureActorForUser(event, stateBundle, { ...options, autoCreateInvestigator: false });
 
   if (!text || text === "/aikp start") {
     return {
@@ -266,7 +613,7 @@ function handleOneBotMessage(event, options = {}) {
     };
   }
 
-  const commandResult = handleCommand(text, event, stateBundle, actorResult);
+  const commandResult = handleCommand(text, event, stateBundle, actorResult, options);
   if (commandResult) {
     const currentBundle = commandResult.stateBundle || stateBundle;
     return {
@@ -276,7 +623,23 @@ function handleOneBotMessage(event, options = {}) {
     };
   }
 
-  const turn = processScenarioTurn(stateBundle.sessionState, actorResult.actorId, text, options.submitAction || require("../../core/src/api").submitAction, options.randomInt || defaultRandomInt);
+  if (!actorResult.actorId) {
+    return {
+      ok: false,
+      reason: "missing_investigator",
+      reply: "你还没车卡喔。先 `/aikp roll journalist` 自己 roll，或者 `/aikp quickfire artist` 先来一张快速卡；群里要一起开就用 `/aikp party-roll journalist`。",
+      sessionState: cloneJson(stateBundle.sessionState)
+    };
+  }
+
+  const turn = processScenarioTurn(
+    stateBundle.sessionState,
+    actorResult.actorId,
+    text,
+    options.submitAction || require("../../core/src/api").submitAction,
+    options.randomInt || defaultRandomInt
+  );
+
   if (!turn.ok) {
     return {
       ok: false,
@@ -307,7 +670,10 @@ module.exports = {
   buildStorageLayout,
   loadMeta,
   saveMeta,
+  rememberUser,
   createDefaultInvestigator,
+  createRolledInvestigator,
+  createQuickfireInvestigator,
   ensureConversationSession,
   ensureActorForUser,
   formatStateSummary,
@@ -315,6 +681,8 @@ module.exports = {
   formatStartReply,
   formatHelpReply,
   formatSettlementReply,
+  formatInvestigatorSummary,
   handleOneBotMessage,
-  rebuildConversationSession
+  rebuildConversationSession,
+  runPartyRollCommand
 };
