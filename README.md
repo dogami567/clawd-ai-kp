@@ -114,6 +114,7 @@ node core/src/coc7-validation.test.js
 - 多人团状态已接入 OneBot：支持 `/aikp party`、`/aikp who`、`/aikp focus`、`/aikp next`
 - 多人团当前会显示 `round + current spotlight`，方便群里轮流推进
 - OneBot 现在还有独立 `线索面板 / NPC 面板 / 行动后状态变化摘要`
+- 行动回包已开始带 `场上此刻 / 可选下一步 / 当前 spotlight` 的收尾句
 
 ## 下一步
 1. 接 OneBot 指令路由（先打通单群单会话）

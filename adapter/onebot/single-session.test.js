@@ -76,6 +76,8 @@ test("rolled investigator can route old church natural language into scene actio
   assert.match(result.reply, /暗骰：Spot Hidden/);
   assert.match(result.reply, /状态变化：/);
   assert.match(result.reply, /时间 \+5/);
+  assert.match(result.reply, /场上此刻/);
+  assert.match(result.reply, /当前 spotlight/);
   rmSync(storageRoot, { recursive: true, force: true });
 });
 

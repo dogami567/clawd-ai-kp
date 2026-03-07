@@ -600,7 +600,43 @@ function formatCheckResultLine(event) {
   return `检定：${event.skillKey} ${event.roll}/${event.targetValue}（${event.result.successLevel}）`;
 }
 
-function formatTurnReply(result, deltaSummary = null) {
+function formatSceneBeat(sessionState) {
+  const dangerLevel = sessionState.scene?.threats?.dangerLevel || "low";
+  const npcs = Array.isArray(sessionState.scene?.participants?.npcs) ? sessionState.scene.participants.npcs : [];
+  const guardedNpcs = npcs.filter((npc) => ["guarded", "hostile"].includes(npc.attitude)).map((npc) => npc.name);
+  const recentTriggeredEvent = [...(sessionState.scene?.events || [])].reverse().find((item) => item.triggered);
+  const lines = [];
+
+  if (dangerLevel === "low") lines.push("场上此刻还没彻底炸开，但空气已经有点绷住了。");
+  if (dangerLevel === "medium") lines.push("场上已经开始起刺了，再多碰几下，后果会往外翻。");
+  if (dangerLevel === "high") lines.push("场面已经很紧，谁再往前硬顶，教堂这口气就要变脸了。");
+  if (dangerLevel === "extreme") lines.push("现在这地方已经快绷断了，下一步很可能直接出大动静。");
+
+  if (guardedNpcs.length) {
+    lines.push(`现在明显绷着的人有：${guardedNpcs.join("、")}。`);
+  }
+
+  if (recentTriggeredEvent?.label) {
+    lines.push(`刚刚场里最新冒出来的是：${recentTriggeredEvent.label}。`);
+  }
+
+  return lines.join("\n");
+}
+
+function formatOptionCue(sessionState) {
+  const options = Array.isArray(sessionState.scene?.nextOptions) ? sessionState.scene.nextOptions : [];
+  if (!options.length) return null;
+  return `你们眼下最顺手的路有：${options.slice(0, 3).map((item) => item.label).join("、")}。`;
+}
+
+function formatSpotlightCue(stateBundle) {
+  const turnState = ensureTurnState(stateBundle.meta);
+  const currentActor = turnState.currentActorId ? stateBundle.sessionState.investigators[turnState.currentActorId] : null;
+  if (!currentActor) return null;
+  return `当前 spotlight 还在 ${currentActor.name} 这边；想切人就用 "/aikp next" 或 "/aikp focus <名字>"。`;
+}
+
+function formatTurnReply(result, extras = {}) {
   if (!result) return "这下我没接住，怪。";
   const parts = [];
   if (result.warningLine) parts.push(result.warningLine);
@@ -610,8 +646,11 @@ function formatTurnReply(result, deltaSummary = null) {
   if (result.narrativeLine) parts.push(result.narrativeLine);
   const checkResultLine = formatCheckResultLine(result.event);
   if (checkResultLine) parts.push(checkResultLine);
-  if (deltaSummary) parts.push(deltaSummary);
+  if (extras.deltaSummary) parts.push(extras.deltaSummary);
+  if (extras.sceneBeat) parts.push(extras.sceneBeat);
   if (result.event?.outcome?.nextPrompt) parts.push(result.event.outcome.nextPrompt);
+  if (extras.optionCue) parts.push(extras.optionCue);
+  if (extras.spotlightCue) parts.push(extras.spotlightCue);
   return parts.filter(Boolean).join("\n");
 }
 
@@ -892,10 +931,18 @@ function handleOneBotMessage(event, options = {}) {
   saveMeta(stateBundle.layout, stateBundle.meta);
 
   const deltaSummary = formatStateDelta(beforeSessionState, stateBundle.sessionState);
+  const sceneBeat = formatSceneBeat(stateBundle.sessionState);
+  const optionCue = formatOptionCue(stateBundle.sessionState);
+  const spotlightCue = formatSpotlightCue(stateBundle);
 
   return {
     ok: true,
-    reply: formatTurnReply(turn.result, deltaSummary),
+    reply: formatTurnReply(turn.result, {
+      deltaSummary,
+      sceneBeat,
+      optionCue,
+      spotlightCue
+    }),
     action: turn.action,
     sessionState: cloneJson(stateBundle.sessionState)
   };
@@ -919,6 +966,9 @@ module.exports = {
   formatPartySummary,
   formatCluePanel,
   formatNpcPanel,
+  formatSceneBeat,
+  formatOptionCue,
+  formatSpotlightCue,
   formatTurnReply,
   formatStartReply,
   formatHelpReply,
