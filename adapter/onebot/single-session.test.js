@@ -74,6 +74,8 @@ test("rolled investigator can route old church natural language into scene actio
   assert.equal(result.ok, true);
   assert.equal(result.action.kind, "explore");
   assert.match(result.reply, /暗骰：Spot Hidden/);
+  assert.match(result.reply, /状态变化：/);
+  assert.match(result.reply, /时间 \+5/);
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
@@ -108,6 +110,21 @@ test("party command shows party panel and current focus", () => {
   assert.match(result.reply, /👉/);
   assert.match(result.reply, /dogami/);
   assert.match(result.reply, /阿青/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("clues and npcs commands show dedicated panels", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
+  const clues = handleOneBotMessage(makeEvent("/aikp clues"), { storageRoot });
+  const npcs = handleOneBotMessage(makeEvent("/aikp npcs"), { storageRoot });
+  assert.equal(clues.ok, true);
+  assert.match(clues.reply, /线索面板/);
+  assert.match(clues.reply, /祭坛背后的异常刮痕/);
+  assert.equal(npcs.ok, true);
+  assert.match(npcs.reply, /NPC 面板/);
+  assert.match(npcs.reply, /守墓人/);
   rmSync(storageRoot, { recursive: true, force: true });
 });
 

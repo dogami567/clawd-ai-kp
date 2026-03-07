@@ -499,6 +499,99 @@ function formatPartySummary(stateBundle) {
   return lines.join("\n");
 }
 
+function formatCluePanel(sessionState) {
+  const clues = Array.isArray(sessionState.scene?.clues) ? sessionState.scene.clues : [];
+  const revealed = clues.filter((item) => item.revealed);
+  const hiddenCore = clues.filter((item) => !item.revealed && item.kind === "core");
+  const hiddenOther = clues.filter((item) => !item.revealed && item.kind !== "core");
+  const lines = ["线索面板："];
+
+  if (revealed.length) {
+    lines.push(...revealed.map((item) => `- 已得：${item.title}（${item.kind}/${item.quality || "unknown"}）`));
+  } else {
+    lines.push("- 已得：暂无");
+  }
+
+  if (hiddenCore.length) {
+    lines.push(`- 未出的核心线索：${hiddenCore.length} 条`);
+  }
+  if (hiddenOther.length) {
+    lines.push(`- 其他未显线索：${hiddenOther.length} 条`);
+  }
+
+  return lines.join("\n");
+}
+
+function formatNpcPanel(sessionState) {
+  const npcs = Array.isArray(sessionState.scene?.participants?.npcs) ? sessionState.scene.participants.npcs : [];
+  const lines = ["NPC 面板："];
+  if (!npcs.length) {
+    lines.push("- 当前场里没有可见 NPC。");
+    return lines.join("\n");
+  }
+
+  for (const npc of npcs) {
+    const socialBits = [];
+    if (npc.socialState?.suspicion) socialBits.push(`戒心 ${npc.socialState.suspicion}`);
+    if (npc.socialState?.fear) socialBits.push(`恐惧 ${npc.socialState.fear}`);
+    if (npc.socialState?.affinity) socialBits.push(`亲近 ${npc.socialState.affinity}`);
+    if (npc.socialState?.obligation) socialBits.push(`亏欠 ${npc.socialState.obligation}`);
+    lines.push(`- ${npc.name}｜态度 ${npc.attitude}｜trust ${npc.trust ?? 0}${socialBits.length ? `｜${socialBits.join(" / ")}` : ""}`);
+  }
+  return lines.join("\n");
+}
+
+function collectNpcStateMap(sessionState) {
+  const npcs = Array.isArray(sessionState.scene?.participants?.npcs) ? sessionState.scene.participants.npcs : [];
+  return new Map(npcs.map((npc) => [npc.id, cloneJson(npc)]));
+}
+
+function formatStateDelta(beforeSessionState, afterSessionState) {
+  if (!beforeSessionState || !afterSessionState) return null;
+  const lines = [];
+  const beforeTime = Number(beforeSessionState.scene?.timeState?.timelineMinute || 0);
+  const afterTime = Number(afterSessionState.scene?.timeState?.timelineMinute || 0);
+  const beforeExposure = Number(beforeSessionState.scene?.threats?.exposure || 0);
+  const afterExposure = Number(afterSessionState.scene?.threats?.exposure || 0);
+  const beforePressure = Number(beforeSessionState.scene?.threats?.pressure || 0);
+  const afterPressure = Number(afterSessionState.scene?.threats?.pressure || 0);
+
+  if (afterTime !== beforeTime) lines.push(`时间 +${afterTime - beforeTime}`);
+  if (afterExposure !== beforeExposure) lines.push(`暴露 ${beforeExposure}→${afterExposure}`);
+  if (afterPressure !== beforePressure) lines.push(`压力 ${beforePressure}→${afterPressure}`);
+
+  const beforeClues = new Set((beforeSessionState.scene?.clues || []).filter((item) => item.revealed).map((item) => item.id));
+  const newClues = (afterSessionState.scene?.clues || []).filter((item) => item.revealed && !beforeClues.has(item.id));
+  if (newClues.length) {
+    lines.push(`新线索：${newClues.map((item) => item.title).join("、")}`);
+  }
+
+  const beforeEvents = new Set((beforeSessionState.scene?.events || []).filter((item) => item.triggered).map((item) => item.id));
+  const newEvents = (afterSessionState.scene?.events || []).filter((item) => item.triggered && !beforeEvents.has(item.id));
+  if (newEvents.length) {
+    lines.push(`新事件：${newEvents.map((item) => item.label).join("、")}`);
+  }
+
+  const beforeNpcMap = collectNpcStateMap(beforeSessionState);
+  for (const npc of (afterSessionState.scene?.participants?.npcs || [])) {
+    const beforeNpc = beforeNpcMap.get(npc.id);
+    if (!beforeNpc) continue;
+    const npcChanges = [];
+    if (beforeNpc.attitude !== npc.attitude) npcChanges.push(`态度 ${beforeNpc.attitude}→${npc.attitude}`);
+    if ((beforeNpc.trust ?? 0) !== (npc.trust ?? 0)) npcChanges.push(`trust ${(beforeNpc.trust ?? 0)}→${(npc.trust ?? 0)}`);
+    if ((beforeNpc.socialState?.suspicion ?? 0) !== (npc.socialState?.suspicion ?? 0)) npcChanges.push(`戒心 ${(beforeNpc.socialState?.suspicion ?? 0)}→${(npc.socialState?.suspicion ?? 0)}`);
+    if ((beforeNpc.socialState?.fear ?? 0) !== (npc.socialState?.fear ?? 0)) npcChanges.push(`恐惧 ${(beforeNpc.socialState?.fear ?? 0)}→${(npc.socialState?.fear ?? 0)}`);
+    if ((beforeNpc.socialState?.affinity ?? 0) !== (npc.socialState?.affinity ?? 0)) npcChanges.push(`亲近 ${(beforeNpc.socialState?.affinity ?? 0)}→${(npc.socialState?.affinity ?? 0)}`);
+    if ((beforeNpc.socialState?.obligation ?? 0) !== (npc.socialState?.obligation ?? 0)) npcChanges.push(`亏欠 ${(beforeNpc.socialState?.obligation ?? 0)}→${(npc.socialState?.obligation ?? 0)}`);
+    if (npcChanges.length) {
+      lines.push(`${npc.name}：${npcChanges.join("，")}`);
+    }
+  }
+
+  if (!lines.length) return null;
+  return `状态变化：\n- ${lines.join("\n- ")}`;
+}
+
 function formatCheckResultLine(event) {
   if (!event?.result) return null;
   if (event.mode === "hidden") {
@@ -507,7 +600,7 @@ function formatCheckResultLine(event) {
   return `检定：${event.skillKey} ${event.roll}/${event.targetValue}（${event.result.successLevel}）`;
 }
 
-function formatTurnReply(result) {
+function formatTurnReply(result, deltaSummary = null) {
   if (!result) return "这下我没接住，怪。";
   const parts = [];
   if (result.warningLine) parts.push(result.warningLine);
@@ -517,6 +610,7 @@ function formatTurnReply(result) {
   if (result.narrativeLine) parts.push(result.narrativeLine);
   const checkResultLine = formatCheckResultLine(result.event);
   if (checkResultLine) parts.push(checkResultLine);
+  if (deltaSummary) parts.push(deltaSummary);
   if (result.event?.outcome?.nextPrompt) parts.push(result.event.outcome.nextPrompt);
   return parts.filter(Boolean).join("\n");
 }
@@ -561,6 +655,8 @@ function formatHelpReply() {
     "- /aikp sheet 查看自己的调查员卡",
     "- /aikp state 查看当前场景状态",
     "- /aikp party 查看队伍面板",
+    "- /aikp clues 查看线索面板",
+    "- /aikp npcs 查看 NPC 面板",
     "- /aikp who 查看当前轮到谁",
     "- /aikp focus <玩家名> 手动切到某位玩家",
     "- /aikp next 切到下一位玩家",
@@ -665,6 +761,12 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
   if (text.trim() === "/aikp party") {
     return { reply: formatPartySummary(stateBundle) };
   }
+  if (text.trim() === "/aikp clues") {
+    return { reply: formatCluePanel(stateBundle.sessionState) };
+  }
+  if (text.trim() === "/aikp npcs") {
+    return { reply: formatNpcPanel(stateBundle.sessionState) };
+  }
   if (text.trim() === "/aikp who") {
     const turnState = ensureTurnState(stateBundle.meta);
     const currentActor = turnState.currentActorId ? stateBundle.sessionState.investigators[turnState.currentActorId] : null;
@@ -766,6 +868,7 @@ function handleOneBotMessage(event, options = {}) {
     };
   }
 
+  const beforeSessionState = cloneJson(stateBundle.sessionState);
   const turn = processScenarioTurn(
     stateBundle.sessionState,
     actorResult.actorId,
@@ -788,9 +891,11 @@ function handleOneBotMessage(event, options = {}) {
   saveSessionApi(stateBundle.sessionState, stateBundle.layout.sessionFile, { meta: { conversationKey: stateBundle.layout.conversationKey } });
   saveMeta(stateBundle.layout, stateBundle.meta);
 
+  const deltaSummary = formatStateDelta(beforeSessionState, stateBundle.sessionState);
+
   return {
     ok: true,
-    reply: formatTurnReply(turn.result),
+    reply: formatTurnReply(turn.result, deltaSummary),
     action: turn.action,
     sessionState: cloneJson(stateBundle.sessionState)
   };
@@ -812,6 +917,8 @@ module.exports = {
   ensureActorForUser,
   formatStateSummary,
   formatPartySummary,
+  formatCluePanel,
+  formatNpcPanel,
   formatTurnReply,
   formatStartReply,
   formatHelpReply,

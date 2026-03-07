@@ -113,6 +113,7 @@ node core/src/coc7-validation.test.js
 - 正式车卡流已接入 OneBot：支持单人 `/aikp roll`、`/aikp quickfire` 与批量 `/aikp party-roll`
 - 多人团状态已接入 OneBot：支持 `/aikp party`、`/aikp who`、`/aikp focus`、`/aikp next`
 - 多人团当前会显示 `round + current spotlight`，方便群里轮流推进
+- OneBot 现在还有独立 `线索面板 / NPC 面板 / 行动后状态变化摘要`
 
 ## 下一步
 1. 接 OneBot 指令路由（先打通单群单会话）
