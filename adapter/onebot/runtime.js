@@ -5,15 +5,29 @@ function isOneBotMessageEvent(envelope = {}) {
   return envelope && envelope.post_type === "message";
 }
 
+function stripCqTags(text = "") {
+  return String(text)
+    .replace(/\[CQ:at,[^\]]*qq=\d+[^\]]*\]/g, " ")
+    .replace(/\[CQ:[^\]]+\]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isSelfMessage(envelope = {}) {
+  const senderId = envelope.user_id ?? envelope.sender?.user_id;
+  return senderId != null && envelope.self_id != null && String(senderId) === String(envelope.self_id);
+}
+
 function normalizeOneBotEvent(envelope = {}) {
   if (!isOneBotMessageEvent(envelope)) {
-    throw new Error("Unsupported OneBot envelope: only post_type=message is supported");
+    return null;
   }
 
+  const cleanedMessage = stripCqTags(envelope.raw_message ?? envelope.message ?? "");
   return {
     user_id: envelope.user_id,
     group_id: envelope.message_type === "group" ? envelope.group_id : undefined,
-    message: envelope.raw_message ?? envelope.message ?? "",
+    message: cleanedMessage,
     raw_message: envelope.raw_message ?? envelope.message ?? "",
     sender: envelope.sender || {},
     message_id: envelope.message_id,
@@ -42,14 +56,40 @@ function buildOneBotSendAction(envelope = {}, replyText = "") {
   };
 }
 
+function buildIgnoredResult(reason, envelope = {}) {
+  return {
+    ok: true,
+    ignored: true,
+    reason,
+    replyText: null,
+    sendAction: null,
+    sessionState: null,
+    action: null,
+    envelopeType: envelope.post_type || null
+  };
+}
+
 function handleOneBotEnvelope(envelope, options = {}) {
+  if (!isOneBotMessageEvent(envelope)) {
+    return buildIgnoredResult("unsupported_post_type", envelope);
+  }
+
+  if (isSelfMessage(envelope)) {
+    return buildIgnoredResult("self_message", envelope);
+  }
+
   const normalized = normalizeOneBotEvent(envelope);
+  if (!normalized || !normalized.message) {
+    return buildIgnoredResult("empty_message", envelope);
+  }
+
   const result = handleOneBotMessage(normalized, options);
   return {
     ok: result.ok,
+    ignored: false,
     reason: result.reason || null,
     replyText: result.reply,
-    sendAction: buildOneBotSendAction(envelope, result.reply),
+    sendAction: result.reply ? buildOneBotSendAction(envelope, result.reply) : null,
     sessionState: result.sessionState,
     action: result.action || null
   };
@@ -84,7 +124,10 @@ if (require.main === module) {
 
 module.exports = {
   isOneBotMessageEvent,
+  stripCqTags,
+  isSelfMessage,
   normalizeOneBotEvent,
   buildOneBotSendAction,
+  buildIgnoredResult,
   handleOneBotEnvelope
 };

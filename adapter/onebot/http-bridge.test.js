@@ -105,6 +105,23 @@ test("http bridge can auto-dispatch action to onebot api", async () => {
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
+test("http bridge ignores non-message envelopes without dispatching", async () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-http-bridge-"));
+  const bridge = createOneBotHttpBridge({ storageRoot, autoSendActions: true, apiBaseUrl: 'http://127.0.0.1:9' });
+  const port = await listen(bridge);
+  const response = await fetch(`http://127.0.0.1:${port}/onebot/event`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ post_type: 'notice', notice_type: 'group_upload' })
+  });
+  const json = await response.json();
+  assert.equal(json.ok, true);
+  assert.equal(json.result.ignored, true);
+  assert.equal(json.dispatchResult, null);
+  bridge.close();
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
 test("http bridge can preview and save imported markdown scene", async () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-http-bridge-"));
   const bridge = createOneBotHttpBridge({ storageRoot });

@@ -101,7 +101,7 @@ function createOneBotHttpBridge(options = {}) {
         const result = handleOneBotEnvelope(envelope, { storageRoot });
         let dispatchResult = null;
 
-        if (autoSendActions) {
+        if (autoSendActions && result.sendAction) {
           dispatchResult = await dispatchOneBotAction(apiBaseUrl, result.sendAction);
         }
 

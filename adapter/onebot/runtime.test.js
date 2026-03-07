@@ -3,7 +3,12 @@ const assert = require("node:assert/strict");
 const { mkdtempSync, rmSync } = require("fs");
 const { join } = require("path");
 const { tmpdir } = require("os");
-const { handleOneBotEnvelope, buildOneBotSendAction } = require("./runtime");
+const {
+  handleOneBotEnvelope,
+  buildOneBotSendAction,
+  stripCqTags,
+  normalizeOneBotEvent
+} = require("./runtime");
 
 function makeEnvelope(message, overrides = {}) {
   return {
@@ -30,13 +35,33 @@ test("builds private send action for private envelope", () => {
   assert.equal(action.params.user_id, 123);
 });
 
+test("strips cq tags from incoming message", () => {
+  assert.equal(stripCqTags("[CQ:at,qq=123] 我借着手电去看祭坛背后的刮痕 [CQ:image,file=1.jpg]"), "我借着手电去看祭坛背后的刮痕");
+  assert.equal(normalizeOneBotEvent(makeEnvelope("[CQ:at,qq=123] /aikp state")).message, "/aikp state");
+});
+
+test("ignores non-message post types", () => {
+  const result = handleOneBotEnvelope({ post_type: "notice", notice_type: "group_upload" });
+  assert.equal(result.ok, true);
+  assert.equal(result.ignored, true);
+  assert.equal(result.reason, "unsupported_post_type");
+  assert.equal(result.sendAction, null);
+});
+
+test("ignores self messages", () => {
+  const result = handleOneBotEnvelope(makeEnvelope("hello", { self_id: 281894872 }));
+  assert.equal(result.ok, true);
+  assert.equal(result.ignored, true);
+  assert.equal(result.reason, "self_message");
+});
+
 test("handles onebot envelope through single-session runtime", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-runtime-"));
   const roll = handleOneBotEnvelope(makeEnvelope("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
   assert.equal(roll.ok, true);
   assert.match(roll.replyText, /传统随机车卡/);
 
-  const turn = handleOneBotEnvelope(makeEnvelope("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
+  const turn = handleOneBotEnvelope(makeEnvelope("[CQ:at,qq=123] 我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   assert.equal(turn.ok, true);
   assert.equal(turn.sendAction.action, "send_group_msg");
   assert.match(turn.replyText, /Spot Hidden/);
