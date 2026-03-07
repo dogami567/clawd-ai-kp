@@ -14,9 +14,10 @@ const { createInvestigatorFromQuickFire, createInvestigatorFromTraditional, gene
 const { calculateDerivedStats } = require("./derived-stats");
 const { listOccupationTemplates, getOccupationTemplate } = require("./occupation-templates");
 const { validateInventoryForEra, buildConditionalAllowance } = require("./inventory-rules");
-const { createCharacter, startSessionApi, addInvestigator, submitAction, getState, settleSessionApi } = require("./api");
+const { createCharacter, startSessionApi, addInvestigator, submitAction, getState, settleSessionApi, saveSessionApi, loadSessionApi, loadSessionSnapshotApi } = require("./api");
 const { adjudicateAction } = require("./adjudication-engine");
 const { WEAPON_TABLE, getWeaponProfile, buildCombatActionFromWeapon } = require("./weapon-table");
+const { createSessionSnapshot, serializeSessionSnapshot, parseSessionSnapshot, saveSessionState, loadSessionState, loadSessionSnapshot } = require("./session-storage");
 
 module.exports = {
   createSession,
@@ -45,8 +46,17 @@ module.exports = {
   submitAction,
   getState,
   settleSessionApi,
+  saveSessionApi,
+  loadSessionApi,
+  loadSessionSnapshotApi,
   adjudicateAction,
   WEAPON_TABLE,
   getWeaponProfile,
-  buildCombatActionFromWeapon
+  buildCombatActionFromWeapon,
+  createSessionSnapshot,
+  serializeSessionSnapshot,
+  parseSessionSnapshot,
+  saveSessionState,
+  loadSessionState,
+  loadSessionSnapshot
 };

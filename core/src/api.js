@@ -21,6 +21,7 @@ const {
 const { applyStateChanges, buildStateChanges } = require("./state-effects");
 const { applyContentEffects } = require("./content-effects");
 const { buildCombatActionFromWeapon } = require("./weapon-table");
+const { saveSessionState, loadSessionState, loadSessionSnapshot } = require("./session-storage");
 
 function createCharacter(input) {
   return createInvestigatorFromQuickFire(input);
@@ -227,11 +228,26 @@ function settleSessionApi(sessionState) {
   return settleSession(sessionState);
 }
 
+function saveSessionApi(sessionState, filePath, options = {}) {
+  return saveSessionState(filePath, sessionState, options);
+}
+
+function loadSessionApi(filePath) {
+  return loadSessionState(filePath);
+}
+
+function loadSessionSnapshotApi(filePath) {
+  return loadSessionSnapshot(filePath);
+}
+
 module.exports = {
   createCharacter,
   startSessionApi,
   addInvestigator,
   submitAction,
   getState,
-  settleSessionApi
+  settleSessionApi,
+  saveSessionApi,
+  loadSessionApi,
+  loadSessionSnapshotApi
 };

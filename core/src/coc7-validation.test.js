@@ -1,5 +1,8 @@
 const assert = require("assert");
-const { createCharacter, startSessionApi, addInvestigator, submitAction } = require("./api");
+const { existsSync, rmSync } = require("fs");
+const { join } = require("path");
+const { tmpdir } = require("os");
+const { createCharacter, startSessionApi, addInvestigator, submitAction, saveSessionApi, loadSessionApi, loadSessionSnapshotApi } = require("./api");
 const { runCheck } = require("./check-engine");
 
 function scriptedRandom(values) {
@@ -199,6 +202,27 @@ function testPenaltyDiceChoosesWorseRoll() {
   assert.equal(result.result.success, false);
 }
 
+function testSessionStorageRoundTrip() {
+  const session = startSessionApi({ sessionId: 'save-roundtrip', summary: '存档测试', location: '旧教堂' });
+  const actor = buildCharacter();
+  addInvestigator(session, actor);
+  submitAction(session, { kind: 'advance_time', minutes: 7 });
+
+  const filePath = join(tmpdir(), `aikp-session-${Date.now()}.json`);
+  const saveResult = saveSessionApi(session, filePath, { meta: { source: 'test-suite' } });
+  const snapshot = loadSessionSnapshotApi(filePath);
+  const loaded = loadSessionApi(filePath);
+
+  assert.equal(saveResult.ok, true);
+  assert.equal(existsSync(filePath), true);
+  assert.equal(snapshot.meta.source, 'test-suite');
+  assert.equal(loaded.sessionId, session.sessionId);
+  assert.equal(loaded.scene.timeState.timelineMinute, 7);
+  assert.equal(loaded.scene.location, '旧教堂');
+
+  rmSync(filePath, { force: true });
+}
+
 function run() {
   testSkillBudgetValidation();
   testCreditRatingValidation();
@@ -208,6 +232,7 @@ function run() {
   testWeaponProfiles();
   testBonusDiceChoosesBetterRoll();
   testPenaltyDiceChoosesWorseRoll();
+  testSessionStorageRoundTrip();
   console.log("coc7-validation.test.js passed");
 }
 
