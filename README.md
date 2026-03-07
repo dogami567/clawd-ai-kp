@@ -62,6 +62,9 @@ AI KP（TRPG 跑团主持）项目仓库。
 - `adapter/` 聊天平台适配层（后续接插件）
 - `assets/` 剧本与图片资源
 
+当前已落地一版最小适配层：
+- `adapter/onebot/single-session.js`：OneBot 单群/单会话入口胶水
+
 ## 已固化流程
 - CoC 玩家全流程场景（V0.1）：`docs/coc-player-flow-v0.1.md`
 
@@ -106,6 +109,7 @@ node core/src/coc7-validation.test.js
 - 单幕场景 demo（旧教堂、守墓人、祭坛、线索链、危险节点）
 - 可复用场景包：`core/data/scenes/old-church-night.scene.json`
 - 旧教堂场景自然语言动作路由：`core/src/scene-action-router.js`
+- OneBot 单群单会话胶水层：`adapter/onebot/single-session.js`
 
 ## 下一步
 1. 接 OneBot 指令路由（先打通单群单会话）
