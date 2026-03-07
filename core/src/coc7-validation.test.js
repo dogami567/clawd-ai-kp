@@ -1,5 +1,6 @@
 const assert = require("assert");
 const { createCharacter, startSessionApi, addInvestigator, submitAction } = require("./api");
+const { runCheck } = require("./check-engine");
 
 function scriptedRandom(values) {
   let index = 0;
@@ -172,6 +173,32 @@ function testWeaponProfiles() {
   assert.equal(result.event.damageFormula.startsWith('1D4+2'), true);
 }
 
+function testBonusDiceChoosesBetterRoll() {
+  const result = runCheck({
+    skillKey: 'Spot Hidden',
+    targetValue: 60,
+    difficulty: 'regular',
+    bonusDice: 1
+  }, scriptedRandom([7, 8, 2]));
+
+  assert.equal(result.roll, 27);
+  assert.equal(result.rollDetail.modifierType, 'bonus');
+  assert.equal(result.result.success, true);
+}
+
+function testPenaltyDiceChoosesWorseRoll() {
+  const result = runCheck({
+    skillKey: 'Listen',
+    targetValue: 60,
+    difficulty: 'regular',
+    penaltyDice: 1
+  }, scriptedRandom([4, 1, 8]));
+
+  assert.equal(result.roll, 84);
+  assert.equal(result.rollDetail.modifierType, 'penalty');
+  assert.equal(result.result.success, false);
+}
+
 function run() {
   testSkillBudgetValidation();
   testCreditRatingValidation();
@@ -179,6 +206,8 @@ function run() {
   testDelayedFollowAlert();
   testCombatDamageAndMajorWounds();
   testWeaponProfiles();
+  testBonusDiceChoosesBetterRoll();
+  testPenaltyDiceChoosesWorseRoll();
   console.log("coc7-validation.test.js passed");
 }
 

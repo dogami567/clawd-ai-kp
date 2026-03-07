@@ -75,7 +75,7 @@ AI KP（TRPG 跑团主持）项目仓库。
   - `core/schemas/scene-state.schema.json`
   - `core/schemas/check-event.schema.json`
 - 已验证可运行的最小骨架：
-  - `core/src/check-engine.js`（d100 检定、成功等级、对抗）
+  - `core/src/check-engine.js`（d100 检定、成功等级、对抗、bonus/penalty dice）
   - `core/src/state-machine.js`（会话状态、fail-forward、战斗/SAN/结算）
   - `core/src/demo.js`（最小流程演示，已本地跑通）
 
@@ -97,7 +97,7 @@ node core/src/coc7-validation.test.js
 - 基于职业模板的 `Credit Rating` 范围校验
 - 派生属性计算（HP / MP / SAN / Build / Damage Bonus / MOV）
 - 物品时代校验与条件化许可
-- 检定 -> fail-forward -> 战斗一轮 -> SAN -> 结团
+- 检定 -> fail-forward -> bonus/penalty dice -> 战斗一轮 -> SAN -> 结团
 - 命令式 API 外壳（建角 / 开团 / 入团 / 提交行动 / 查状态 / 结团 / 时间推进）
 - 动作裁定层（`explore / talk / use_item / risky_action / steal / follow`）
 - 偷窃 / 跟踪的延迟后果倒计时（失物发现、路线变化、警觉上升）

@@ -88,6 +88,8 @@ function buildAdjudicationResponse(sessionState, actor, action, randomInt) {
       mode: action.mode || "open",
       difficulty: adjudication.difficulty,
       failForward: adjudication.failForward,
+      bonusDice: action.bonusDice,
+      penaltyDice: action.penaltyDice,
       checkType: "adjudication"
     },
     randomInt

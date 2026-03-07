@@ -265,7 +265,9 @@ function performSkillCheck(sessionState, input, randomInt) {
       mode: input.mode || "open",
       skillKey: input.skillKey,
       difficulty: input.difficulty || "regular",
-      targetValue: skill.value
+      targetValue: skill.value,
+      bonusDice: input.bonusDice,
+      penaltyDice: input.penaltyDice
     },
     randomInt
   );
@@ -330,7 +332,9 @@ function resolveCombatRound(sessionState, action, randomInt) {
       mode: "open",
       skillKey: action.attackSkill,
       targetValue: action.attackValue,
-      difficulty: "regular"
+      difficulty: "regular",
+      bonusDice: action.attackBonusDice,
+      penaltyDice: action.attackPenaltyDice
     },
     randomInt
   );
@@ -341,7 +345,9 @@ function resolveCombatRound(sessionState, action, randomInt) {
       mode: "open",
       skillKey: action.defendSkill,
       targetValue: action.defendValue,
-      difficulty: "regular"
+      difficulty: "regular",
+      bonusDice: action.defendBonusDice,
+      penaltyDice: action.defendPenaltyDice
     },
     randomInt
   );
@@ -411,7 +417,9 @@ function runSanCheck(sessionState, payload, randomInt) {
       mode: payload.mode || "hidden",
       skillKey: "SAN",
       targetValue: actor.resources.san,
-      difficulty: "regular"
+      difficulty: "regular",
+      bonusDice: payload.bonusDice,
+      penaltyDice: payload.penaltyDice
     },
     randomInt
   );
