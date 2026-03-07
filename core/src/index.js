@@ -23,6 +23,7 @@ const { loadSceneTemplate, buildNpcRuntimeFromCard, buildScenarioNpcs, applyScen
 const { loadCampaignTemplate, getCampaignScene, listCampaignHooks, buildCampaignMeta, attachCampaignMeta, getCurrentCampaign, transitionCampaignScene, evaluateHookConditions, listEligibleHooks, autoAdvanceCampaign, formatCampaignSummary } = require("./campaign-loader");
 const { loadStoryPackTemplate, formatStoryPackSummary } = require("./story-pack-loader");
 const { validateCampaignTemplate, validateStoryPackTemplate } = require("./authoring-validation");
+const { importSceneMarkdown } = require("./scene-markdown-import");
 const { normalizeText, routeOldChurchNightAction, routeScenarioAction, processScenarioTurn } = require("./scene-action-router");
 
 module.exports = {
@@ -89,6 +90,7 @@ module.exports = {
   formatStoryPackSummary,
   validateCampaignTemplate,
   validateStoryPackTemplate,
+  importSceneMarkdown,
   normalizeText,
   routeOldChurchNightAction,
   routeScenarioAction,
