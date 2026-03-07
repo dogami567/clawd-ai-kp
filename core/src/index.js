@@ -20,6 +20,7 @@ const { WEAPON_TABLE, getWeaponProfile, buildCombatActionFromWeapon } = require(
 const { createSessionSnapshot, serializeSessionSnapshot, parseSessionSnapshot, saveSessionState, loadSessionState, loadSessionSnapshot } = require("./session-storage");
 const { validateInvestigatorCard, validateSceneState, validateCheckEvent, validateSessionState } = require("./schema-validation");
 const { loadSceneTemplate, buildNpcRuntimeFromCard, buildScenarioNpcs, applySceneTemplate, seedSessionFromScenario } = require("./scene-loader");
+const { normalizeText, routeOldChurchNightAction, routeScenarioAction, processScenarioTurn } = require("./scene-action-router");
 
 module.exports = {
   createSession,
@@ -69,5 +70,9 @@ module.exports = {
   buildNpcRuntimeFromCard,
   buildScenarioNpcs,
   applySceneTemplate,
-  seedSessionFromScenario
+  seedSessionFromScenario,
+  normalizeText,
+  routeOldChurchNightAction,
+  routeScenarioAction,
+  processScenarioTurn
 };

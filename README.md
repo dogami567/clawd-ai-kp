@@ -105,6 +105,7 @@ node core/src/coc7-validation.test.js
 - 偷窃 / 跟踪的延迟后果倒计时（失物发现、路线变化、警觉上升）
 - 单幕场景 demo（旧教堂、守墓人、祭坛、线索链、危险节点）
 - 可复用场景包：`core/data/scenes/old-church-night.scene.json`
+- 旧教堂场景自然语言动作路由：`core/src/scene-action-router.js`
 
 ## 下一步
 1. 接 OneBot 指令路由（先打通单群单会话）

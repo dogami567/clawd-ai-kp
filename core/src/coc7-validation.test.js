@@ -4,6 +4,7 @@ const { join } = require("path");
 const { tmpdir } = require("os");
 const { createCharacter, startSessionApi, addInvestigator, submitAction, saveSessionApi, loadSessionApi, loadSessionSnapshotApi, settleSessionApi } = require("./api");
 const { runCheck } = require("./check-engine");
+const { routeScenarioAction, processScenarioTurn } = require("./scene-action-router");
 
 function scriptedRandom(values) {
   let index = 0;
@@ -260,6 +261,48 @@ function testScenarioTemplateSeeding() {
   assert.equal(Array.isArray(session.scene.meta.starterPrompts), true);
 }
 
+function testScenarioActionRouterMatchesOldChurchPrompts() {
+  const session = startSessionApi({ sessionId: 'scenario-router', scenarioId: 'old-church-night' });
+  const explore = routeScenarioAction(session, 'pc-any', '我借着手电去看祭坛背后的刮痕');
+  const talk = routeScenarioAction(session, 'pc-any', '我先安抚守墓人，再把话慢慢引到昨晚的钟声上');
+  const risky = routeScenarioAction(session, 'pc-any', '我直接把祭坛下面那块木板掀开');
+
+  assert.equal(explore.kind, 'explore');
+  assert.equal(talk.kind, 'talk');
+  assert.equal(risky.kind, 'risky_action');
+}
+
+function testScenarioTurnProcessesNaturalLanguage() {
+  const session = startSessionApi({ sessionId: 'scenario-turn', scenarioId: 'old-church-night' });
+  const actor = createCharacter({
+    id: 'pc-turn',
+    name: '苏晚',
+    age: 26,
+    occupationKey: 'artist',
+    persona: '胆子不大，但眼睛尖，写字和画图都很稳',
+    motivation: '想把朋友留下来的怪线索查明白',
+    era: 'depression_era_1920s',
+    luck: 60,
+    attributeAssignments: { STR: 40, CON: 50, DEX: 60, APP: 70, POW: 60, INT: 80, SIZ: 50, EDU: 50 },
+    skills: [
+      { key: 'Spot Hidden', value: 65, baseValue: 25, occupationPointsSpent: 20, interestPointsSpent: 20, tag: 'investigation' },
+      { key: 'Persuade', value: 60, baseValue: 10, occupationPointsSpent: 25, interestPointsSpent: 25, tag: 'social' },
+      { key: 'Psychology', value: 50, baseValue: 10, occupationPointsSpent: 20, interestPointsSpent: 20, tag: 'investigation' },
+      { key: 'Fighting', value: 35, baseValue: 25, occupationPointsSpent: 0, interestPointsSpent: 10, tag: 'action' }
+    ],
+    inventory: [
+      { name: '手电', category: 'tool', quantity: 1 },
+      { name: '素描本', category: 'tool', quantity: 1 }
+    ]
+  });
+  addInvestigator(session, actor);
+
+  const result = processScenarioTurn(session, actor.id, '我借着手电去看祭坛背后的刮痕', submitAction, scriptedRandom([28]));
+  assert.equal(result.ok, true);
+  assert.equal(result.result.kind, 'explore');
+  assert.equal(result.result.event.result.success, true);
+}
+
 function run() {
   testSkillBudgetValidation();
   testCreditRatingValidation();
@@ -272,6 +315,8 @@ function run() {
   testSessionStorageRoundTrip();
   testSettlementSummaryIncludesSceneAftermath();
   testScenarioTemplateSeeding();
+  testScenarioActionRouterMatchesOldChurchPrompts();
+  testScenarioTurnProcessesNaturalLanguage();
   console.log("coc7-validation.test.js passed");
 }
 
