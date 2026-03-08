@@ -272,6 +272,17 @@ function testScenarioActionRouterMatchesOldChurchPrompts() {
   assert.equal(risky.kind, 'risky_action');
 }
 
+function testScenarioActionRouterMatchesBellTowerPrompts() {
+  const session = startSessionApi({ sessionId: 'scenario-router-belltower', scenarioId: 'bell-tower-followup' });
+  const listen = routeScenarioAction(session, 'pc-any', '我先停在楼梯口，听听上面是不是有动静');
+  const rope = routeScenarioAction(session, 'pc-any', '我想看看钟绳有没有被人新近碰过');
+
+  assert.equal(listen.kind, 'explore');
+  assert.equal(listen.skillKey, 'Listen');
+  assert.equal(rope.kind, 'explore');
+  assert.equal(rope.skillKey, 'Spot Hidden');
+}
+
 function testScenarioTurnProcessesNaturalLanguage() {
   const session = startSessionApi({ sessionId: 'scenario-turn', scenarioId: 'old-church-night' });
   const actor = createCharacter({
@@ -303,6 +314,35 @@ function testScenarioTurnProcessesNaturalLanguage() {
   assert.equal(result.result.event.result.success, true);
 }
 
+function testBellTowerTurnProcessesNaturalLanguage() {
+  const session = startSessionApi({ sessionId: 'scenario-turn-belltower', scenarioId: 'bell-tower-followup' });
+  const actor = createCharacter({
+    id: 'pc-belltower',
+    name: '苏晚',
+    age: 26,
+    occupationKey: 'artist',
+    persona: '胆子不大，但眼睛尖，写字和画图都很稳',
+    motivation: '想把朋友留下来的怪线索查明白',
+    era: 'depression_era_1920s',
+    luck: 60,
+    attributeAssignments: { STR: 40, CON: 50, DEX: 60, APP: 70, POW: 60, INT: 80, SIZ: 50, EDU: 50 },
+    skills: [
+      { key: 'Spot Hidden', value: 65, baseValue: 25, occupationPointsSpent: 20, interestPointsSpent: 20, tag: 'investigation' },
+      { key: 'Listen', value: 60, baseValue: 20, occupationPointsSpent: 20, interestPointsSpent: 20, tag: 'investigation' }
+    ],
+    inventory: [
+      { name: '手电', category: 'tool', quantity: 1 }
+    ]
+  });
+  addInvestigator(session, actor);
+
+  const result = processScenarioTurn(session, actor.id, '我想看看钟绳有没有被人新近碰过', submitAction, scriptedRandom([24]));
+  assert.equal(result.ok, true);
+  assert.equal(result.result.kind, 'explore');
+  assert.equal(result.result.event.result.success, true);
+  assert.equal(session.scene.clues.find((clue) => clue.id === 'clue-bell-rope')?.revealed, true);
+}
+
 function run() {
   testSkillBudgetValidation();
   testCreditRatingValidation();
@@ -316,7 +356,9 @@ function run() {
   testSettlementSummaryIncludesSceneAftermath();
   testScenarioTemplateSeeding();
   testScenarioActionRouterMatchesOldChurchPrompts();
+  testScenarioActionRouterMatchesBellTowerPrompts();
   testScenarioTurnProcessesNaturalLanguage();
+  testBellTowerTurnProcessesNaturalLanguage();
   console.log("coc7-validation.test.js passed");
 }
 

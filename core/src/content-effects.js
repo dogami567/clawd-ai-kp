@@ -113,6 +113,11 @@ function applyContentEffects(sessionState, action, success, successLevel) {
     socialAftermath: null
   };
 
+  if (action.kind === "explore" && action.revealClueId && success) {
+    const clue = revealExistingClue(sessionState.scene, action.revealClueId, action.revealQuality || "clear");
+    if (clue) effects.revealedClues.push(clue);
+  }
+
   if (action.kind === "talk") {
     effects.intelLine = buildTalkIntel(action, success, successLevel);
     if (action.targetNpc) {

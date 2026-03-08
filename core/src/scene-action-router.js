@@ -23,6 +23,7 @@ function routeOldChurchNightAction(text, actorId) {
       narrativeBonus: 1,
       riskLevel: "medium",
       impactScore: 2,
+      revealClueId: "clue-altar-scratch",
       clueTitle: "祭坛背后的异常刮痕",
       clueKind: "core",
       clueQuality: "clear",
@@ -101,10 +102,76 @@ function routeOldChurchNightAction(text, actorId) {
   return null;
 }
 
+function routeBellTowerFollowupAction(text, actorId) {
+  const normalized = normalizeText(text);
+
+  if (hasAny(normalized, ["听听上面", "听上面的动静", "听动静", "楼梯口", "停在楼梯口", "listen"])) {
+    return {
+      kind: "explore",
+      actorId,
+      intent: text,
+      skillKey: "Listen",
+      leverageScore: 2,
+      narrativeBonus: 1,
+      riskLevel: "medium",
+      impactScore: 2,
+      revealClueId: "clue-tower-dust",
+      clueTitle: "钟楼里残留的人为回响",
+      clueKind: "optional",
+      clueQuality: "clear",
+      mode: "open",
+      onSuccessPrompt: "你屏住气听了几秒，能分出来那不是风自己撞出来的响动。楼上确实留过人活动后的余波，而且还没散干净。"
+    };
+  }
+
+  if (hasAny(normalized, ["钟绳", "钟架", "碰过", "检查钟绳", "看看钟绳", "tower-investigate"])) {
+    return {
+      kind: "explore",
+      actorId,
+      intent: text,
+      skillKey: "Spot Hidden",
+      leverageScore: 2,
+      narrativeBonus: 1,
+      riskLevel: "medium",
+      impactScore: 2,
+      revealClueId: "clue-bell-rope",
+      clueTitle: "被动过的钟绳",
+      clueKind: "core",
+      clueQuality: "clear",
+      mode: "open",
+      onSuccessPrompt: "钟绳上那层灰断得很新，边缘还有被掌心反复压过的滑痕。昨晚来的人不是随便碰了一下，而是真的试过要把钟敲响。"
+    };
+  }
+
+  if (hasAny(normalized, ["钟室角落", "翻钟室", "翻角落", "翻找角落", "tower-search"])) {
+    return {
+      kind: "explore",
+      actorId,
+      intent: text,
+      skillKey: "Spot Hidden",
+      leverageScore: 1,
+      narrativeBonus: 1,
+      riskLevel: "medium",
+      impactScore: 1,
+      revealClueId: "clue-tower-dust",
+      clueTitle: "钟室角落的翻动痕迹",
+      clueKind: "optional",
+      clueQuality: "partial",
+      mode: "open",
+      onSuccessPrompt: "角落那堆灰不是自然塌的，像是有人蹲在这里翻过东西，翻完又匆匆拿鞋尖抹了两下。"
+    };
+  }
+
+  return null;
+}
+
 function routeScenarioAction(sessionState, actorId, text) {
   const scenarioId = sessionState?.scene?.meta?.scenarioId;
   if (scenarioId === "old-church-night") {
     return routeOldChurchNightAction(text, actorId);
+  }
+  if (scenarioId === "bell-tower-followup") {
+    return routeBellTowerFollowupAction(text, actorId);
   }
   return null;
 }
@@ -148,6 +215,7 @@ function processScenarioTurn(sessionState, actorId, text, submitAction, randomIn
 module.exports = {
   normalizeText,
   routeOldChurchNightAction,
+  routeBellTowerFollowupAction,
   routeScenarioAction,
   processScenarioTurn
 };

@@ -192,7 +192,7 @@ function buildStateChanges(action, adjudication, success) {
 
   if (action.kind === "explore") {
     changes.push({ path: "scene.timeState.timelineMinute", op: "inc", value: success ? 5 : 10 });
-    if (success) {
+    if (success && !action.revealClueId) {
       changes.push({
         path: "scene.clues",
         op: "append",
