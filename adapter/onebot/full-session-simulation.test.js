@@ -64,8 +64,16 @@ test("runtime-level full session simulation covers a realistic multiplayer ai-kp
   assert.equal(start.ok, true);
   assert.equal(start.ignored, false);
   assert.equal(start.routing.reason, "activation_intent");
-  assert.match(start.replyText, /你现在还没车卡/);
-  assert.match(start.replyText, /守墓人现在就在右边廊口盯着你/);
+  assert.match(start.replyText, /先别急着进场/);
+  assert.match(start.replyText, /当前可选剧本/);
+
+  const selectStoryPack = send("1");
+  assert.equal(selectStoryPack.ok, true);
+  assert.equal(selectStoryPack.ignored, false);
+  assert.equal(selectStoryPack.routing.reason, "pending_storypack_choice");
+  assert.match(selectStoryPack.replyText, /这次先跑《旧教堂异响》/);
+  assert.match(selectStoryPack.replyText, /你现在还没车卡/);
+  assert.doesNotMatch(selectStoryPack.replyText, /门一推开/);
 
   const joiner = send("我也来", { user_id: AQING_ID, sender: { nickname: "阿青" } });
   assert.equal(joiner.ok, false);

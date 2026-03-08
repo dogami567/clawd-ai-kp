@@ -23,17 +23,22 @@ function readJsonLines(filePath) {
     .map((line) => JSON.parse(line));
 }
 
+function selectDefaultStoryPack(storageRoot) {
+  return handleOneBotMessage(makeEvent("/aikp pack old-church-arc-pack"), { storageRoot });
+}
+
 test("builds stable onebot conversation key", () => {
   assert.equal(buildConversationKey(makeEvent("hi")), "onebot-group-95270001");
   assert.equal(buildConversationKey({ user_id: 123, message: "hi" }), "onebot-dm-123");
 });
 
-test("start reply asks players to roll instead of auto default sheet", () => {
+test("start reply prompts players to pick a story pack before opening scene text", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   const result = handleOneBotMessage(makeEvent(""), { storageRoot });
   assert.equal(result.ok, true);
-  assert.match(result.reply, /你现在还没车卡/);
-  assert.match(result.reply, /\/aikp roll journalist/);
+  assert.match(result.reply, /先别急着进场/);
+  assert.match(result.reply, /当前可选剧本/);
+  assert.match(result.reply, /old-church-arc-pack/);
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
@@ -59,7 +64,8 @@ test("natural language can start session without auto default chargen", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   const result = handleOneBotMessage(makeEvent("我想跑团"), { storageRoot });
   assert.equal(result.ok, true);
-  assert.match(result.reply, /你现在还没车卡/);
+  assert.match(result.reply, /先别急着进场/);
+  assert.match(result.reply, /当前可选剧本/);
   assert.doesNotMatch(result.reply, /传统随机车卡/);
   rmSync(storageRoot, { recursive: true, force: true });
 });
@@ -68,7 +74,19 @@ test("natural language start also accepts 我要跑团 phrasing", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   const result = handleOneBotMessage(makeEvent("我要跑团"), { storageRoot });
   assert.equal(result.ok, true);
+  assert.match(result.reply, /先别急着进场/);
+  assert.match(result.reply, /当前可选剧本/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("story pack selection switches session into prestart lobby without dumping opening when no card exists", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  handleOneBotMessage(makeEvent("我想跑团"), { storageRoot });
+  const result = handleOneBotMessage(makeEvent("1"), { storageRoot });
+  assert.equal(result.ok, true);
+  assert.match(result.reply, /这次先跑《旧教堂异响》/);
   assert.match(result.reply, /你现在还没车卡/);
+  assert.doesNotMatch(result.reply, /门一推开/);
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
@@ -109,6 +127,7 @@ test("natural language can batch roll traditional investigators with visible att
 
 test("plain action is blocked before chargen", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
   const result = handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   assert.equal(result.ok, false);
   assert.match(result.reply, /你还没车卡/);
@@ -117,6 +136,7 @@ test("plain action is blocked before chargen", () => {
 
 test("rolled investigator can route old church natural language into scene action", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
   handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
   const result = handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   assert.equal(result.ok, true);
@@ -131,6 +151,7 @@ test("rolled investigator can route old church natural language into scene actio
 
 test("open checks show roll and target in player-visible format", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
   handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
   const result = handleOneBotMessage(makeEvent("我去找守墓人聊聊钟声"), { storageRoot, randomInt: () => 28 });
   assert.equal(result.ok, true);
@@ -151,6 +172,7 @@ test("sheet command shows current investigator", () => {
 
 test("returns state summary command", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
   handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
   const result = handleOneBotMessage(makeEvent("/aikp state"), { storageRoot });
   assert.equal(result.ok, true);
@@ -161,6 +183,7 @@ test("returns state summary command", () => {
 
 test("campaign command shows story arc hooks", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
   const result = handleOneBotMessage(makeEvent("/aikp campaign"), { storageRoot });
   assert.equal(result.ok, true);
   assert.match(result.reply, /故事弧：旧教堂异响/);
@@ -170,6 +193,7 @@ test("campaign command shows story arc hooks", () => {
 
 test("storypack and goto commands expose framework-level transitions", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
   const storypack = handleOneBotMessage(makeEvent("/aikp storypack"), { storageRoot });
   assert.equal(storypack.ok, true);
   assert.match(storypack.reply, /Story Pack：旧教堂异响 Story Pack/);
@@ -190,6 +214,7 @@ test("authoring validators keep campaign and story pack loadable", () => {
 
 test("hooks and advance commands support conditional transitions", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
   handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
   const hooksBefore = handleOneBotMessage(makeEvent("/aikp hooks"), { storageRoot });
   assert.equal(hooksBefore.ok, true);
@@ -204,6 +229,7 @@ test("hooks and advance commands support conditional transitions", () => {
 
 test("scene and recap commands show environment and stage summary", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
   handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
   handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   const scene = handleOneBotMessage(makeEvent("/aikp scene"), { storageRoot });
@@ -233,6 +259,7 @@ test("party command shows party panel and current focus", () => {
 
 test("clues and npcs commands show dedicated panels", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
   handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
   handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   const clues = handleOneBotMessage(makeEvent("/aikp clues"), { storageRoot });
@@ -275,6 +302,7 @@ test("focus and next commands switch current actor", () => {
 
 test("settle command returns summary lines", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
   handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
   handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   const result = handleOneBotMessage(makeEvent("/aikp settle"), { storageRoot });
@@ -286,6 +314,7 @@ test("settle command returns summary lines", () => {
 
 test("hidden checks stay hidden in reply line", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
   handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
   const result = handleOneBotMessage(makeEvent("我直接把祭坛下面那块木板掀开"), { storageRoot, randomInt: () => 81 });
   assert.equal(result.ok, true);
@@ -350,6 +379,7 @@ test("writes chat log, operation ledger, state snapshot and summary chunks", () 
 
 test("reset command rebuilds session state", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
   handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
   handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   const before = handleOneBotMessage(makeEvent("/aikp state"), { storageRoot });
@@ -363,6 +393,7 @@ test("reset command rebuilds session state", () => {
 
 test("start prompts to resume or open a new line when an old save exists", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
   handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
   handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   handleOneBotMessage(makeEvent("先不跑了"), { storageRoot });
@@ -381,6 +412,7 @@ test("new line archives current run and resume can restore the archived save", (
   const conversationKey = buildConversationKey(makeEvent("x"));
   const archiveRoot = join(storageRoot, "archives", conversationKey);
 
+  selectDefaultStoryPack(storageRoot);
   handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
   handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   handleOneBotMessage(makeEvent("先不跑了"), { storageRoot });

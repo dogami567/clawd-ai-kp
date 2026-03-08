@@ -1,4 +1,4 @@
-const { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } = require("fs");
+const { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } = require("fs");
 const { join } = require("path");
 const {
   startSessionApi,
@@ -74,6 +74,23 @@ const OCCUPATION_ALIASES = Object.freeze([
   ["名流", "dilettante"]
 ]);
 
+const STORY_PACK_FILE_SUFFIX = ".story-pack.json";
+const STORY_PACKS_DIR = join(__dirname, "..", "..", "core", "data", "story-packs");
+const STORY_PACK_REQUIRED_COMMANDS = new Set([
+  "start",
+  "state",
+  "campaign",
+  "hooks",
+  "storypack",
+  "goto",
+  "advance",
+  "scene",
+  "recap",
+  "clues",
+  "npcs",
+  "settle"
+]);
+
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -84,6 +101,67 @@ function defaultRandomInt(min, max) {
 
 function getKpRuntimePrompt() {
   return KP_RUNTIME_PROMPT;
+}
+
+function listStoryPackTemplates() {
+  if (!existsSync(STORY_PACKS_DIR)) return [];
+  return readdirSync(STORY_PACKS_DIR)
+    .filter((fileName) => fileName.endsWith(STORY_PACK_FILE_SUFFIX))
+    .map((fileName) => fileName.slice(0, -STORY_PACK_FILE_SUFFIX.length))
+    .sort()
+    .map((storyPackId) => loadStoryPackTemplate(storyPackId));
+}
+
+function listStoryPackEntries() {
+  return listStoryPackTemplates().map((storyPack, index) => {
+    const campaign = loadCampaignTemplate(storyPack.campaignId);
+    return {
+      index: index + 1,
+      storyPack,
+      campaign,
+      startSceneId: campaign.startSceneId || storyPack.sceneIds?.[0] || "old-church-night"
+    };
+  });
+}
+
+function getSelectedStoryPackEntry(meta = {}) {
+  const storyPackId = typeof meta.storyPackId === "string" ? meta.storyPackId.trim() : "";
+  if (!storyPackId) return null;
+  return listStoryPackEntries().find((entry) => entry.storyPack.id === storyPackId) || null;
+}
+
+function resolveStoryPackSelection(text = "") {
+  const normalized = normalizeIntentText(text);
+  if (!normalized) return null;
+
+  if (includesAny(normalized, ["看看剧本", "剧本列表", "模组列表", "故事包列表", "story pack", "storypack", "packs"])) {
+    return { kind: "list" };
+  }
+
+  const entries = listStoryPackEntries();
+  const trimmed = normalized.trim();
+  if (/^\d+$/.test(trimmed)) {
+    const byIndex = entries.find((entry) => String(entry.index) === trimmed);
+    if (byIndex) return { kind: "select", storyPackId: byIndex.storyPack.id };
+  }
+
+  for (const entry of entries) {
+    const aliases = [
+      entry.storyPack.id,
+      entry.storyPack.title,
+      String(entry.storyPack.title || "").replace(/\s*story pack\s*/ig, ""),
+      entry.campaign.id,
+      entry.campaign.title
+    ]
+      .map((value) => normalizeIntentText(value))
+      .filter(Boolean);
+
+    if (aliases.some((alias) => trimmed === alias || trimmed.includes(alias) || alias.includes(trimmed))) {
+      return { kind: "select", storyPackId: entry.storyPack.id };
+    }
+  }
+
+  return null;
 }
 
 function sanitizeSegment(value) {
@@ -180,6 +258,12 @@ function ensureConversationControlState(meta) {
   meta.pendingResumeChoice = meta.pendingResumeChoice && typeof meta.pendingResumeChoice === "object"
     ? meta.pendingResumeChoice
     : null;
+  meta.pendingStoryPackChoice = meta.pendingStoryPackChoice && typeof meta.pendingStoryPackChoice === "object"
+    ? meta.pendingStoryPackChoice
+    : null;
+  meta.storyPackId = typeof meta.storyPackId === "string" && meta.storyPackId.trim()
+    ? meta.storyPackId.trim()
+    : null;
   return meta;
 }
 
@@ -260,11 +344,12 @@ function ensureTurnState(meta) {
   return meta.turnState;
 }
 
-function buildInitialMeta(event, layout, scenarioId) {
+function buildInitialMeta(event, layout, scenarioId, options = {}) {
   const meta = {
     conversationKey: layout.conversationKey,
     sessionFile: layout.sessionFile,
     scenarioId,
+    storyPackId: options.storyPackId || null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     actorsByUserId: {},
@@ -288,6 +373,7 @@ function ensureConversationSession(event, options = {}) {
   const layout = buildStorageLayout(options.storageRoot, event);
   const scenarioId = options.scenarioId || "old-church-night";
   const campaignId = options.campaignId || "old-church-arc";
+  const storyPackId = options.storyPackId || null;
   let meta = loadMeta(layout);
   let sessionState;
 
@@ -308,7 +394,7 @@ function ensureConversationSession(event, options = {}) {
   });
   attachCampaignMeta(sessionState, loadCampaignTemplate(campaignId));
   saveSessionApi(sessionState, layout.sessionFile, { meta: { conversationKey: layout.conversationKey } });
-  meta = buildInitialMeta(event, layout, scenarioId);
+  meta = buildInitialMeta(event, layout, scenarioId, { storyPackId });
   meta.campaignId = campaignId;
   saveMeta(layout, meta);
   return { layout, meta, sessionState, created: true };
@@ -318,9 +404,10 @@ function rebuildConversationSession(event, options = {}) {
   const layout = buildStorageLayout(options.storageRoot, event);
   const scenarioId = options.scenarioId || "old-church-night";
   const campaignId = options.campaignId || "old-church-arc";
+  const storyPackId = options.storyPackId || null;
   const sessionState = startSessionApi({ sessionId: `onebot-${layout.conversationKey}`, scenarioId });
   attachCampaignMeta(sessionState, loadCampaignTemplate(campaignId));
-  const meta = buildInitialMeta(event, layout, scenarioId);
+  const meta = buildInitialMeta(event, layout, scenarioId, { storyPackId });
   meta.campaignId = campaignId;
   saveSessionApi(sessionState, layout.sessionFile, { meta: { conversationKey: layout.conversationKey } });
   saveMeta(layout, meta);
@@ -956,22 +1043,69 @@ function formatGeneratedInvestigatorReply(bundle) {
   return lines.join("\n");
 }
 
-function formatStartReply(stateBundle, actorResult) {
+function formatStoryPackChoicePrompt() {
+  const entries = listStoryPackEntries();
+  const lines = [
+    "先别急着进场，我们先定这次跑哪条线。",
+    "当前可选剧本："
+  ];
+
+  if (!entries.length) {
+    lines.push("- 现在还没有可用 story pack。先补剧本数据吧。");
+    return lines.join("\n");
+  }
+
+  for (const entry of entries) {
+    lines.push(`- ${entry.index}. ${entry.storyPack.title}｜ID ${entry.storyPack.id}｜故事弧 ${entry.campaign.title}｜${(entry.storyPack.sceneIds || []).length} 幕`);
+  }
+
+  lines.push("回复序号、剧本名，或 `/aikp pack <storyPackId>` 来选择。");
+  return lines.join("\n");
+}
+
+function formatStoryPackDisplayTitle(storyPack) {
+  return String(storyPack?.title || "未命名剧本").replace(/\s*story pack\s*$/i, "").trim();
+}
+
+function formatAwaitingInvestigatorReply(stateBundle) {
+  const entry = getSelectedStoryPackEntry(stateBundle.meta);
+  const title = formatStoryPackDisplayTitle(entry?.storyPack);
+  return [
+    `这次先跑《${title}》。`,
+    "你现在还没车卡，先把调查员卡定下来，我再给你正式开场。",
+    "可以直接说“我想一次全车完卡，角色选记者”或“给我快速车卡，职业医生”。",
+    "继续用指令也行：`/aikp roll journalist`、`/aikp quickfire artist`。"
+  ].join("\n");
+}
+
+function formatSceneStartReply(stateBundle, actorResult) {
+  const entry = getSelectedStoryPackEntry(stateBundle.meta);
   const opening = stateBundle.sessionState.scene.meta?.opening || "场景已经起好了。";
   const prompts = stateBundle.sessionState.scene.meta?.starterPrompts || [];
-  const joinLine = actorResult?.investigator
-    ? `当前绑定调查员：${actorResult.investigator.name}。`
-    : "你现在还没车卡，先建卡再入场会更像真跑团。";
+  const packLine = entry?.storyPack?.title ? `这次跑《${formatStoryPackDisplayTitle(entry.storyPack)}》。` : null;
+  const joinLine = actorResult?.investigator ? `当前绑定调查员：${actorResult.investigator.name}。` : null;
   const promptLine = prompts.length ? `场景里可以直接试这些：\n- ${prompts.join("\n- ")}` : "你现在可以直接说行动。";
   const helpLine = "自然语言就行：比如“我想一次全车完卡，角色选记者”“给我快速车卡，职业医生”“我借着手电去看祭坛背后的刮痕”；继续用指令也行：`/aikp roll journalist`、`/aikp quickfire artist`。";
-  return [joinLine, opening, promptLine, helpLine].join("\n");
+  return [packLine, joinLine, opening, promptLine, helpLine].filter(Boolean).join("\n");
+}
+
+function formatStartReply(stateBundle, actorResult) {
+  if (!getSelectedStoryPackEntry(stateBundle.meta)) {
+    return formatStoryPackChoicePrompt();
+  }
+  if (!actorResult?.investigator) {
+    return formatAwaitingInvestigatorReply(stateBundle);
+  }
+  return formatSceneStartReply(stateBundle, actorResult);
 }
 
 function formatHelpReply() {
   return [
     "AI-KP 可用指令：",
     "- 平时直接说自然语言也行，例如：我想一次全车完卡，角色选记者",
-    "- /aikp start 开始跑团；如果有旧档会先问你续上还是新开",
+    "- /aikp start 开始跑团；如果有旧档会先问你续上还是新开，没有旧档就先选剧本",
+    "- /aikp packs 查看当前可选剧本",
+    "- /aikp pack <storyPackId> 选择这条要跑的剧本",
     "- /aikp roll <occupationKey> 单人传统随机车卡",
     "- /aikp quickfire <occupationKey> 单人快速车卡",
     "- /aikp party-roll <occupationKey> 为当前已出现玩家批量传统随机车卡",
@@ -1006,6 +1140,32 @@ function formatSettlementReply(settlement) {
   if (Array.isArray(settlement.summaryLines)) lines.push(...settlement.summaryLines);
   lines.push(`事件数：${settlement.eventCount}`);
   return lines.join("\n");
+}
+
+function buildSessionEnterOperationEvent(event, actionText = "进入了本群 AI-KP") {
+  return buildOperationEvent("session.enter", `${getSenderName(event)} ${actionText}`, {
+    userId: event.user_id != null ? String(event.user_id) : null
+  });
+}
+
+function buildStartPanelResponse(event, stateBundle, actorResult, operationEvents = []) {
+  if (!getSelectedStoryPackEntry(stateBundle.meta)) {
+    const prompt = maybePromptForStoryPackChoice(event, stateBundle) || {
+      reply: formatStoryPackChoicePrompt(),
+      operationEvents: []
+    };
+    return {
+      stateBundle: prompt.stateBundle || stateBundle,
+      reply: prompt.reply,
+      operationEvents: [...operationEvents, ...(prompt.operationEvents || [])]
+    };
+  }
+
+  return {
+    stateBundle,
+    reply: formatStartReply(stateBundle, actorResult),
+    operationEvents
+  };
 }
 
 function parseCommand(text) {
@@ -1265,6 +1425,7 @@ function archiveConversationState(stateBundle, source = "manual") {
   stateBundle.meta.archiveHistory.push(record);
   stateBundle.meta.updatedAt = new Date().toISOString();
   stateBundle.meta.pendingResumeChoice = null;
+  stateBundle.meta.pendingStoryPackChoice = null;
   saveMeta(stateBundle.layout, stateBundle.meta);
   return record;
 }
@@ -1273,7 +1434,8 @@ function preserveConversationControls(meta = {}) {
   ensureConversationControlState(meta);
   return {
     archiveHistory: cloneJson(meta.archiveHistory || []),
-    runtimeProfileId: meta.runtimeProfileId || "maimai-kp-v1"
+    runtimeProfileId: meta.runtimeProfileId || "maimai-kp-v1",
+    storyPackId: meta.storyPackId || null
   };
 }
 
@@ -1282,6 +1444,8 @@ function applyPreservedConversationControls(meta = {}, preserved = {}) {
   meta.archiveHistory = cloneJson(preserved.archiveHistory || []);
   meta.runtimeProfileId = preserved.runtimeProfileId || meta.runtimeProfileId || "maimai-kp-v1";
   meta.pendingResumeChoice = null;
+  meta.pendingStoryPackChoice = null;
+  meta.storyPackId = preserved.storyPackId || meta.storyPackId || null;
   return meta;
 }
 
@@ -1414,6 +1578,86 @@ function formatSaveListReply(stateBundle) {
   return lines.join("\n");
 }
 
+function activateStoryPackSelection(event, stateBundle, storyPackId) {
+  const selected = listStoryPackEntries().find((entry) => entry.storyPack.id === storyPackId);
+  if (!selected) return null;
+
+  const preservedControls = preserveConversationControls(stateBundle.meta);
+  const preservedKnownUsers = cloneJson(stateBundle.meta.knownUsers || []);
+  const preservedActorsByUserId = cloneJson(stateBundle.meta.actorsByUserId || {});
+  const preservedTurnState = cloneJson(ensureTurnState(stateBundle.meta));
+  const preservedInvestigators = cloneJson(stateBundle.sessionState.investigators || {});
+
+  const fresh = rebuildConversationSession(event, {
+    storageRoot: stateBundle.layout.root,
+    scenarioId: selected.startSceneId,
+    campaignId: selected.storyPack.campaignId,
+    storyPackId: selected.storyPack.id,
+    reset: true
+  });
+
+  applyPreservedConversationControls(fresh.meta, preservedControls);
+  fresh.meta.storyPackId = selected.storyPack.id;
+  fresh.meta.knownUsers = preservedKnownUsers;
+  fresh.meta.actorsByUserId = preservedActorsByUserId;
+  fresh.meta.turnState = preservedTurnState;
+  rememberUser(fresh.meta, event);
+
+  fresh.sessionState.investigators = preservedInvestigators;
+  saveSessionApi(fresh.sessionState, fresh.layout.sessionFile, { meta: { conversationKey: fresh.layout.conversationKey } });
+  saveMeta(fresh.layout, fresh.meta);
+  return { stateBundle: fresh, selected };
+}
+
+function maybePromptForStoryPackChoice(event, stateBundle) {
+  if (getSelectedStoryPackEntry(stateBundle.meta)) return null;
+  stateBundle.meta.pendingStoryPackChoice = {
+    askedAt: new Date().toISOString()
+  };
+  stateBundle.meta.updatedAt = new Date().toISOString();
+  saveMeta(stateBundle.layout, stateBundle.meta);
+  return {
+    reply: formatStoryPackChoicePrompt(),
+    operationEvents: [buildOperationEvent("storypack.prompt", `${getSenderName(event)} 触发了剧本选择`, {
+      userId: event.user_id != null ? String(event.user_id) : null
+    })]
+  };
+}
+
+function handlePendingStoryPackChoice(text, event, stateBundle) {
+  const pending = stateBundle.meta.pendingStoryPackChoice;
+  if (!pending) return null;
+
+  const selection = resolveStoryPackSelection(text);
+  if (!selection || selection.kind === "list") {
+    return { reply: formatStoryPackChoicePrompt() };
+  }
+
+  const activated = activateStoryPackSelection(event, stateBundle, selection.storyPackId);
+  if (!activated) {
+    return {
+      reply: `我没对上这个剧本。\n${formatStoryPackChoicePrompt()}`
+    };
+  }
+
+  setSessionMode(activated.stateBundle, "kp");
+  activated.stateBundle.meta.pendingStoryPackChoice = null;
+  activated.stateBundle.meta.updatedAt = new Date().toISOString();
+  saveMeta(activated.stateBundle.layout, activated.stateBundle.meta);
+  const actor = ensureActorForUser(event, activated.stateBundle, { autoCreateInvestigator: false });
+
+  return {
+    stateBundle: activated.stateBundle,
+    reply: formatStartReply(activated.stateBundle, actor),
+    operationEvents: [buildOperationEvent("storypack.select", `${getSenderName(event)} 选择了剧本 ${activated.selected.storyPack.title}`, {
+      userId: event.user_id != null ? String(event.user_id) : null,
+      storyPackId: activated.selected.storyPack.id,
+      campaignId: activated.selected.storyPack.campaignId,
+      scenarioId: activated.selected.startSceneId
+    })]
+  };
+}
+
 function detectResumeChoice(text = "") {
   const normalized = normalizeIntentText(text);
   if (!normalized) return null;
@@ -1492,13 +1736,16 @@ function handlePendingResumeChoice(text, event, stateBundle) {
     const archiveLine = archived
       ? `旧档我先收成 ${archived.saveId} 了。`
       : "这边没有需要打包的旧档，我直接给你开了新线。";
-    return {
-      reply: `${archiveLine}\n${formatStartReply(fresh.stateBundle, fresh.actor)}`,
-      stateBundle: fresh.stateBundle,
-      operationEvents: [buildOperationEvent("session.new", `${getSenderName(event)} 新开了一条跑团线`, {
+    const startReply = buildStartPanelResponse(event, fresh.stateBundle, fresh.actor, [
+      buildOperationEvent("session.new", `${getSenderName(event)} 新开了一条跑团线`, {
         userId: event.user_id != null ? String(event.user_id) : null,
         archivedSaveId: archived?.saveId || null
-      })]
+      })
+    ]);
+    return {
+      reply: `${archiveLine}\n${startReply.reply}`,
+      stateBundle: startReply.stateBundle,
+      operationEvents: startReply.operationEvents
     };
   }
 
@@ -1733,6 +1980,15 @@ function shouldHandleOneBotMessage(event, options = {}) {
     };
   }
 
+  if (meta?.pendingStoryPackChoice) {
+    return {
+      handle: true,
+      reason: "pending_storypack_choice",
+      conversationKey: layout.conversationKey,
+      sessionMode
+    };
+  }
+
   if (isActive) {
     return {
       handle: true,
@@ -1780,6 +2036,7 @@ function handleNaturalIntent(text, event, stateBundle, actorResult, options = {}
   const naturalIntent = detectNaturalIntent(text, actorResult);
   if (!naturalIntent) return null;
   const randomInt = options.randomInt || defaultRandomInt;
+  const hasSelectedStoryPack = Boolean(getSelectedStoryPackEntry(stateBundle.meta));
 
   if (naturalIntent.kind === "exit") {
     setSessionMode(stateBundle, "idle");
@@ -1792,10 +2049,12 @@ function handleNaturalIntent(text, event, stateBundle, actorResult, options = {}
   }
 
   if (naturalIntent.kind === "state") {
+    if (!hasSelectedStoryPack) return { reply: formatStoryPackChoicePrompt() };
     return { reply: formatStateSummary(stateBundle.sessionState, stateBundle.meta) };
   }
 
   if (naturalIntent.kind === "recap") {
+    if (!hasSelectedStoryPack) return { reply: formatStoryPackChoicePrompt() };
     return { reply: formatRecapReply(stateBundle.sessionState) };
   }
 
@@ -1807,12 +2066,9 @@ function handleNaturalIntent(text, event, stateBundle, actorResult, options = {}
     const resumeCandidate = getResumeCandidate(stateBundle);
     if (!resumeCandidate) {
       setSessionMode(stateBundle, "kp");
-      return {
-        reply: formatStartReply(stateBundle, actorResult),
-        operationEvents: [buildOperationEvent("session.enter", `${getSenderName(event)} 进入了本群 AI-KP`, {
-          userId: event.user_id != null ? String(event.user_id) : null
-        })]
-      };
+      return buildStartPanelResponse(event, stateBundle, actorResult, [
+        buildSessionEnterOperationEvent(event)
+      ]);
     }
 
     if (resumeCandidate.source === "archive") {
@@ -1843,13 +2099,16 @@ function handleNaturalIntent(text, event, stateBundle, actorResult, options = {}
   if (naturalIntent.kind === "new") {
     const archived = archiveConversationState(stateBundle, "natural-new-line");
     const fresh = startFreshConversationLine(event, stateBundle);
-    return {
-      reply: `${archived ? `旧档我先收成 ${archived.saveId} 了。` : "这边没有旧档要打包，我直接给你起新线。"}\n${formatStartReply(fresh.stateBundle, fresh.actor)}`,
-      stateBundle: fresh.stateBundle,
-      operationEvents: [buildOperationEvent("session.new", `${getSenderName(event)} 自然语言新开了一条跑团线`, {
+    const startReply = buildStartPanelResponse(event, fresh.stateBundle, fresh.actor, [
+      buildOperationEvent("session.new", `${getSenderName(event)} 自然语言新开了一条跑团线`, {
         userId: event.user_id != null ? String(event.user_id) : null,
         archivedSaveId: archived?.saveId || null
-      })]
+      })
+    ]);
+    return {
+      reply: `${archived ? `旧档我先收成 ${archived.saveId} 了。` : "这边没有旧档要打包，我直接给你起新线。"}\n${startReply.reply}`,
+      stateBundle: startReply.stateBundle,
+      operationEvents: startReply.operationEvents
     };
   }
 
@@ -1857,12 +2116,9 @@ function handleNaturalIntent(text, event, stateBundle, actorResult, options = {}
     const prompt = maybePromptForExistingSave(event, stateBundle);
     if (prompt) return prompt;
     setSessionMode(stateBundle, "kp");
-    return {
-      reply: formatStartReply(stateBundle, actorResult),
-      operationEvents: [buildOperationEvent("session.enter", `${getSenderName(event)} 激活了本群 AI-KP`, {
-        userId: event.user_id != null ? String(event.user_id) : null
-      })]
-    };
+    return buildStartPanelResponse(event, stateBundle, actorResult, [
+      buildSessionEnterOperationEvent(event, "激活了本群 AI-KP")
+    ]);
   }
 
   if (naturalIntent.kind === "roll") {
@@ -1888,12 +2144,13 @@ function handleNaturalIntent(text, event, stateBundle, actorResult, options = {}
 function handleCommand(text, event, stateBundle, actorResult, options = {}) {
   const { command, args } = parseCommand(text);
   const randomInt = options.randomInt || defaultRandomInt;
+  const subcommand = args[0] || "";
 
   if (command === "/aikp" && !args.length) {
     return { reply: formatHelpReply() };
   }
 
-  if (command === "/aikp" && args[0] === "help") {
+  if (command === "/aikp" && subcommand === "help") {
     return { reply: formatHelpReply() };
   }
 
@@ -1905,32 +2162,59 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
     const prompt = maybePromptForExistingSave(event, stateBundle);
     if (prompt) return prompt;
     setSessionMode(stateBundle, "kp");
-    return {
-      reply: formatStartReply(stateBundle, actorResult),
-      operationEvents: [buildOperationEvent("session.enter", `${getSenderName(event)} 查看了开场面板`, {
-        userId: event.user_id != null ? String(event.user_id) : null
-      })]
-    };
+    return buildStartPanelResponse(event, stateBundle, actorResult, [
+      buildSessionEnterOperationEvent(event, "查看了开场面板")
+    ]);
   }
 
   if (text.trim() === "/aikp saves") {
     return { reply: formatSaveListReply(stateBundle) };
   }
 
-  if (text.trim() === "/aikp new") {
-    const archived = archiveConversationState(stateBundle, "command-new-line");
-    const fresh = startFreshConversationLine(event, stateBundle);
+  if (text.trim() === "/aikp packs") {
+    return { reply: formatStoryPackChoicePrompt() };
+  }
+
+  if (command === "/aikp" && subcommand === "pack") {
+    const selection = resolveStoryPackSelection(args.slice(1).join(" "));
+    if (!selection || selection.kind === "list") {
+      return { reply: formatStoryPackChoicePrompt() };
+    }
+    const activated = activateStoryPackSelection(event, stateBundle, selection.storyPackId);
+    if (!activated) {
+      return { reply: `我没对上这个剧本。\n${formatStoryPackChoicePrompt()}` };
+    }
+    setSessionMode(activated.stateBundle, "kp");
+    const nextActor = ensureActorForUser(event, activated.stateBundle, { autoCreateInvestigator: false });
     return {
-      reply: `${archived ? `旧档我先收成 ${archived.saveId} 了。` : "这边没有旧档要打包，我直接给你起新线。"}\n${formatStartReply(fresh.stateBundle, fresh.actor)}`,
-      stateBundle: fresh.stateBundle,
-      operationEvents: [buildOperationEvent("session.new", `${getSenderName(event)} 手动新开了一条跑团线`, {
+      reply: formatStartReply(activated.stateBundle, nextActor),
+      stateBundle: activated.stateBundle,
+      operationEvents: [buildOperationEvent("storypack.select", `${getSenderName(event)} 手动选择了剧本 ${activated.selected.storyPack.title}`, {
         userId: event.user_id != null ? String(event.user_id) : null,
-        archivedSaveId: archived?.saveId || null
+        storyPackId: activated.selected.storyPack.id,
+        campaignId: activated.selected.storyPack.campaignId,
+        scenarioId: activated.selected.startSceneId
       })]
     };
   }
 
-  if (command === "/aikp" && args[0] === "resume") {
+  if (text.trim() === "/aikp new") {
+    const archived = archiveConversationState(stateBundle, "command-new-line");
+    const fresh = startFreshConversationLine(event, stateBundle);
+    const startReply = buildStartPanelResponse(event, fresh.stateBundle, fresh.actor, [
+      buildOperationEvent("session.new", `${getSenderName(event)} 手动新开了一条跑团线`, {
+        userId: event.user_id != null ? String(event.user_id) : null,
+        archivedSaveId: archived?.saveId || null
+      })
+    ]);
+    return {
+      reply: `${archived ? `旧档我先收成 ${archived.saveId} 了。` : "这边没有旧档要打包，我直接给你起新线。"}\n${startReply.reply}`,
+      stateBundle: startReply.stateBundle,
+      operationEvents: startReply.operationEvents
+    };
+  }
+
+  if (command === "/aikp" && subcommand === "resume") {
     const selector = args[1] || "";
     if (!selector && hasMeaningfulSessionProgress(stateBundle.layout, stateBundle.meta, stateBundle.sessionState)) {
       setSessionMode(stateBundle, "kp");
@@ -1957,6 +2241,10 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
     };
   }
 
+  if (!getSelectedStoryPackEntry(stateBundle.meta) && STORY_PACK_REQUIRED_COMMANDS.has(subcommand)) {
+    return { reply: formatStoryPackChoicePrompt() };
+  }
+
   if (text.trim() === "/aikp state") {
     return { reply: formatStateSummary(stateBundle.sessionState, stateBundle.meta) };
   }
@@ -1975,7 +2263,8 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
     return { reply: lines.join("\n") };
   }
   if (text.trim() === "/aikp storypack") {
-    return { reply: formatStoryPackSummary(loadStoryPackTemplate("old-church-arc-pack")) };
+    const selected = getSelectedStoryPackEntry(stateBundle.meta);
+    return { reply: selected ? formatStoryPackSummary(selected.storyPack) : formatStoryPackChoicePrompt() };
   }
   if (text.trim() === "/aikp scene") {
     return { reply: formatScenePanel(stateBundle.sessionState) };
@@ -1999,15 +2288,24 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
   }
 
   if (text.trim() === "/aikp reset") {
-    const fresh = rebuildConversationSession(event, { storageRoot: stateBundle.layout.root, scenarioId: stateBundle.meta.scenarioId, reset: true });
+    const fresh = rebuildConversationSession(event, {
+      storageRoot: stateBundle.layout.root,
+      scenarioId: stateBundle.meta.scenarioId,
+      campaignId: stateBundle.meta.campaignId,
+      storyPackId: stateBundle.meta.storyPackId,
+      reset: true
+    });
     setSessionMode(fresh, "kp");
     const actor = ensureActorForUser(event, fresh, { autoCreateInvestigator: false });
-    return {
-      reply: formatStartReply(fresh, actor),
-      stateBundle: fresh,
-      operationEvents: [buildOperationEvent("session.reset", `${getSenderName(event)} 重置了当前会话`, {
+    const startReply = buildStartPanelResponse(event, fresh, actor, [
+      buildOperationEvent("session.reset", `${getSenderName(event)} 重置了当前会话`, {
         userId: event.user_id != null ? String(event.user_id) : null
-      })]
+      })
+    ]);
+    return {
+      reply: startReply.reply,
+      stateBundle: startReply.stateBundle,
+      operationEvents: startReply.operationEvents
     };
   }
 
@@ -2074,7 +2372,7 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
     };
   }
 
-  if (command === "/aikp" && args[0] === "focus") {
+  if (command === "/aikp" && subcommand === "focus") {
     const entry = resolveActorSelection(stateBundle, args.slice(1).join(" "));
     if (!entry?.actorId || !entry.investigator) {
       return { reply: "我没找到你要切到的那位。可以用玩家名、调查员名、userId 来指。" };
@@ -2089,7 +2387,7 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
     };
   }
 
-  if (command === "/aikp" && args[0] === "goto") {
+  if (command === "/aikp" && subcommand === "goto") {
     const targetSceneId = args[1];
     if (!targetSceneId) {
       return { reply: "你得给我一个 sceneId，比如 `/aikp goto bell-tower-followup`。" };
@@ -2106,7 +2404,7 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
     };
   }
 
-  if (command === "/aikp" && args[0] === "advance") {
+  if (command === "/aikp" && subcommand === "advance") {
     const preferredHookId = args[1] || null;
     const campaignId = stateBundle.meta.campaignId || "old-church-arc";
     const campaign = loadCampaignTemplate(campaignId);
@@ -2123,7 +2421,7 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
     };
   }
 
-  if (command === "/aikp" && args[0] === "next") {
+  if (command === "/aikp" && subcommand === "next") {
     const turnState = advanceCurrentActor(stateBundle);
     const currentActor = turnState.currentActorId ? stateBundle.sessionState.investigators[turnState.currentActorId] : null;
     return {
@@ -2177,15 +2475,32 @@ function handleOneBotMessage(event, options = {}) {
     }
   }
 
+  if (stateBundle.meta.pendingStoryPackChoice && text && !isAiKpCommand(text)) {
+    const pendingResult = handlePendingStoryPackChoice(text, event, stateBundle);
+    if (pendingResult) {
+      const currentBundle = pendingResult.stateBundle || stateBundle;
+      return flushConversationArtifacts(event, currentBundle, {
+        ok: true,
+        reply: pendingResult.reply
+      }, {
+        includeContextPacket: options.includeContextPacket === true,
+        contextOptions,
+        summaryOptions,
+        operationEvents: pendingResult.operationEvents || []
+      });
+    }
+  }
+
   if (!text) {
-    return flushConversationArtifacts(event, stateBundle, {
+    const startReply = buildStartPanelResponse(event, stateBundle, actorResult);
+    return flushConversationArtifacts(event, startReply.stateBundle || stateBundle, {
       ok: true,
-      reply: formatStartReply(stateBundle, actorResult)
+      reply: startReply.reply
     }, {
       includeContextPacket: options.includeContextPacket === true,
       contextOptions,
       summaryOptions,
-      operationEvents: []
+      operationEvents: startReply.operationEvents || []
     });
   }
 
@@ -2213,6 +2528,21 @@ function handleOneBotMessage(event, options = {}) {
       contextOptions,
       summaryOptions,
       operationEvents: naturalIntentResult.operationEvents || []
+    });
+  }
+
+  if (!getSelectedStoryPackEntry(stateBundle.meta)) {
+    return flushConversationArtifacts(event, stateBundle, {
+      ok: false,
+      reason: "missing_storypack",
+      reply: formatStoryPackChoicePrompt()
+    }, {
+      includeContextPacket: options.includeContextPacket === true,
+      contextOptions,
+      summaryOptions,
+      operationEvents: [buildOperationEvent("turn.blocked", `${getSenderName(event)} 想继续，但当前还没选剧本`, {
+        userId: event.user_id != null ? String(event.user_id) : null
+      })]
     });
   }
 

@@ -75,6 +75,17 @@ test("natural activation intent can enter kp flow without command prefix", () =>
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
+test("natural start intent now prompts story pack selection before scene intro", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-runtime-"));
+  const result = handleOneBotEnvelope(makeEnvelope("我想跑团"), { storageRoot });
+  assert.equal(result.ok, true);
+  assert.equal(result.ignored, false);
+  assert.equal(result.routing.reason, "activation_intent");
+  assert.match(result.replyText, /先别急着进场/);
+  assert.match(result.replyText, /当前可选剧本/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
 test("group whitelist blocks non-whitelisted groups", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-runtime-"));
   const result = handleOneBotEnvelope(makeEnvelope("/aikp roll journalist", { group_id: 12345 }), {
@@ -92,6 +103,10 @@ test("handles onebot envelope through single-session runtime", () => {
   const roll = handleOneBotEnvelope(makeEnvelope("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
   assert.equal(roll.ok, true);
   assert.match(roll.replyText, /传统随机车卡/);
+
+  const pack = handleOneBotEnvelope(makeEnvelope("/aikp pack old-church-arc-pack"), { storageRoot });
+  assert.equal(pack.ok, true);
+  assert.match(pack.replyText, /旧教堂异响/);
 
   const turn = handleOneBotEnvelope(makeEnvelope("[CQ:at,qq=123] 我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   assert.equal(turn.ok, true);
