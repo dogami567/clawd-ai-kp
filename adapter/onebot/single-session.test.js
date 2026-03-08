@@ -64,6 +64,14 @@ test("natural language can start session without auto default chargen", () => {
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
+test("natural language start also accepts 我要跑团 phrasing", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  const result = handleOneBotMessage(makeEvent("我要跑团"), { storageRoot });
+  assert.equal(result.ok, true);
+  assert.match(result.reply, /你现在还没车卡/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
 test("natural language can quickfire chargen with chinese occupation", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   const result = handleOneBotMessage(makeEvent("给我快速车卡，职业医生"), { storageRoot, randomInt: () => 0 });

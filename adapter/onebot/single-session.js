@@ -1633,7 +1633,26 @@ function detectNaturalIntent(text, actorResult = {}) {
   const wantsQuickfire = includesAny(normalized, ["quickfire", "快速车卡", "快速建卡", "快车卡", "快速卡"]);
   const wantsRoll = includesAny(normalized, ["车卡", "建卡", "开卡", "人物卡", "角色卡", "roll卡", "roll"]) || includesAny(normalized, ["角色选", "职业选", "职业是", "职业当", "我选"]);
   const wantsParty = includesAny(normalized, ["全车", "全员", "一起车", "大家都", "批量车卡", "一次全车完卡", "一起开卡"]);
-  const wantsStart = includesAny(normalized, ["想跑团", "开始跑团", "开始吧", "开团", "开局", "进游戏", "进入游戏", "开始跑", "想开团", "想玩coc"]);
+  const wantsStart = includesAny(normalized, [
+    "想跑团",
+    "我要跑团",
+    "来跑团",
+    "陪我跑团",
+    "开始跑团",
+    "开始跑个团",
+    "开始吧",
+    "开团",
+    "我要开团",
+    "想开团",
+    "开局",
+    "进游戏",
+    "进入游戏",
+    "开始跑",
+    "想玩coc",
+    "我要玩coc",
+    "来个coc",
+    "开个coc"
+  ]);
 
   if (wantsRoll || (!actorResult.actorId && wantsStart && explicitOccupationKey)) {
     return {
