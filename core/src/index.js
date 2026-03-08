@@ -10,7 +10,14 @@ const {
 } = require("./state-machine");
 
 const { runCheck, runOpposedCheck } = require("./check-engine");
-const { createInvestigatorFromQuickFire, createInvestigatorFromTraditional, generateTraditionalAttributes, QUICK_FIRE_VALUES, ATTRIBUTE_KEYS } = require("./character-creation");
+const {
+  createInvestigatorFromQuickFire,
+  createInvestigatorFromTraditional,
+  generateTraditionalAttributes,
+  generateTraditionalAttributesDetailed,
+  QUICK_FIRE_VALUES,
+  ATTRIBUTE_KEYS
+} = require("./character-creation");
 const { calculateDerivedStats } = require("./derived-stats");
 const { listOccupationTemplates, getOccupationTemplate } = require("./occupation-templates");
 const { validateInventoryForEra, buildConditionalAllowance } = require("./inventory-rules");
@@ -42,6 +49,7 @@ module.exports = {
   createInvestigatorFromQuickFire,
   createInvestigatorFromTraditional,
   generateTraditionalAttributes,
+  generateTraditionalAttributesDetailed,
   QUICK_FIRE_VALUES,
   ATTRIBUTE_KEYS,
   calculateDerivedStats,

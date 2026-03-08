@@ -20,18 +20,58 @@ function rollDice(count, sides, randomInt = defaultRandomInt) {
   return total;
 }
 
-function generateTraditionalAttributes(randomInt = defaultRandomInt) {
+function rollDiceDetailed(count, sides, randomInt = defaultRandomInt) {
+  let total = 0;
+  const rolls = [];
+  for (let index = 0; index < count; index += 1) {
+    const roll = randomInt(1, sides);
+    rolls.push(roll);
+    total += roll;
+  }
   return {
-    STR: rollDice(3, 6, randomInt) * 5,
-    CON: rollDice(3, 6, randomInt) * 5,
-    DEX: rollDice(3, 6, randomInt) * 5,
-    APP: rollDice(3, 6, randomInt) * 5,
-    POW: rollDice(3, 6, randomInt) * 5,
-    SIZ: (rollDice(2, 6, randomInt) + 6) * 5,
-    INT: (rollDice(2, 6, randomInt) + 6) * 5,
-    EDU: (rollDice(2, 6, randomInt) + 6) * 5,
-    Luck: rollDice(3, 6, randomInt) * 5
+    count,
+    sides,
+    rolls,
+    total
   };
+}
+
+function buildTraditionalBreakdownEntry(key, label, formula, roll, modifier = 0) {
+  const rawTotal = roll.total + modifier;
+  return {
+    key,
+    label,
+    formula,
+    dice: roll.rolls,
+    modifier,
+    rawTotal,
+    value: rawTotal * 5
+  };
+}
+
+function generateTraditionalAttributesDetailed(randomInt = defaultRandomInt) {
+  const breakdown = [
+    buildTraditionalBreakdownEntry("STR", "力量", "3D6", rollDiceDetailed(3, 6, randomInt)),
+    buildTraditionalBreakdownEntry("CON", "体质", "3D6", rollDiceDetailed(3, 6, randomInt)),
+    buildTraditionalBreakdownEntry("DEX", "敏捷", "3D6", rollDiceDetailed(3, 6, randomInt)),
+    buildTraditionalBreakdownEntry("APP", "外貌", "3D6", rollDiceDetailed(3, 6, randomInt)),
+    buildTraditionalBreakdownEntry("POW", "意志", "3D6", rollDiceDetailed(3, 6, randomInt)),
+    buildTraditionalBreakdownEntry("SIZ", "体型", "2D6+6", rollDiceDetailed(2, 6, randomInt), 6),
+    buildTraditionalBreakdownEntry("INT", "智力", "2D6+6", rollDiceDetailed(2, 6, randomInt), 6),
+    buildTraditionalBreakdownEntry("EDU", "教育", "2D6+6", rollDiceDetailed(2, 6, randomInt), 6),
+    buildTraditionalBreakdownEntry("Luck", "幸运", "3D6", rollDiceDetailed(3, 6, randomInt))
+  ];
+
+  const attributes = Object.fromEntries(breakdown.map((entry) => [entry.key, entry.value]));
+  return {
+    attributes,
+    breakdown,
+    byKey: Object.fromEntries(breakdown.map((entry) => [entry.key, entry]))
+  };
+}
+
+function generateTraditionalAttributes(randomInt = defaultRandomInt) {
+  return generateTraditionalAttributesDetailed(randomInt).attributes;
 }
 
 function buildQuickFireAttributes(assignments, luck = 50) {
@@ -272,6 +312,7 @@ module.exports = {
   ATTRIBUTE_KEYS,
   buildQuickFireAttributes,
   generateTraditionalAttributes,
+  generateTraditionalAttributesDetailed,
   createInvestigatorFromQuickFire,
   createInvestigatorFromTraditional,
   calculatePointBudgets,

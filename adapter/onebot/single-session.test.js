@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { mkdtempSync, rmSync } = require("fs");
+const { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } = require("fs");
 const { join } = require("path");
 const { tmpdir } = require("os");
 const { handleOneBotMessage, buildConversationKey } = require("./single-session");
@@ -13,6 +13,14 @@ function makeEvent(message, overrides = {}) {
     message,
     ...overrides
   };
+}
+
+function readJsonLines(filePath) {
+  return readFileSync(filePath, "utf8")
+    .trim()
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
 }
 
 test("builds stable onebot conversation key", () => {
@@ -47,6 +55,25 @@ test("single player can build a quickfire investigator", () => {
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
+test("natural language can start session without auto default chargen", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  const result = handleOneBotMessage(makeEvent("我想跑团"), { storageRoot });
+  assert.equal(result.ok, true);
+  assert.match(result.reply, /你现在还没车卡/);
+  assert.doesNotMatch(result.reply, /传统随机车卡/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("natural language can quickfire chargen with chinese occupation", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  const result = handleOneBotMessage(makeEvent("给我快速车卡，职业医生"), { storageRoot, randomInt: () => 0 });
+  assert.equal(result.ok, true);
+  assert.match(result.reply, /快速车卡/);
+  assert.match(result.reply, /医生/);
+  assert.match(result.reply, /快速分配/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
 test("party-roll can batch roll all known users", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   handleOneBotMessage(makeEvent("hello"), { storageRoot });
@@ -56,6 +83,19 @@ test("party-roll can batch roll all known users", () => {
   assert.match(result.reply, /批量做了 传统随机车卡/);
   assert.match(result.reply, /dogami/);
   assert.match(result.reply, /阿青/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("natural language can batch roll traditional investigators with visible attribute breakdown", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  handleOneBotMessage(makeEvent("hello"), { storageRoot });
+  handleOneBotMessage(makeEvent("hello", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  const result = handleOneBotMessage(makeEvent("我想一次全车完卡，角色选记者"), { storageRoot, randomInt: () => 3 });
+  assert.equal(result.ok, true);
+  assert.match(result.reply, /批量做了 传统随机车卡/);
+  assert.match(result.reply, /dogami/);
+  assert.match(result.reply, /阿青/);
+  assert.match(result.reply, /STR 9->45/);
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
@@ -78,6 +118,16 @@ test("rolled investigator can route old church natural language into scene actio
   assert.match(result.reply, /时间 \+5/);
   assert.match(result.reply, /场上此刻/);
   assert.match(result.reply, /当前 spotlight/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("open checks show roll and target in player-visible format", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  const result = handleOneBotMessage(makeEvent("我去找守墓人聊聊钟声"), { storageRoot, randomInt: () => 28 });
+  assert.equal(result.ok, true);
+  assert.match(result.reply, /投掷：28（目标 \d+，/);
+  assert.doesNotMatch(result.reply, /检定：Persuade 28\//);
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
@@ -233,6 +283,49 @@ test("hidden checks stay hidden in reply line", () => {
   assert.equal(result.ok, true);
   assert.match(result.reply, /暗骰：Fighting/);
   assert.doesNotMatch(result.reply, /81\/35/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("writes chat log, operation ledger, state snapshot and summary chunks", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  const conversationKey = buildConversationKey(makeEvent("x"));
+  const logsRoot = join(storageRoot, "logs", conversationKey);
+  const chatLogFile = join(logsRoot, "chat", "events.jsonl");
+  const ledgerLogFile = join(logsRoot, "ledger", "operations.jsonl");
+  const stateFile = join(logsRoot, "state", "latest.json");
+  const summaryDir = join(logsRoot, "summaries");
+
+  const result = handleOneBotMessage(makeEvent("给我快速车卡，职业医生"), {
+    storageRoot,
+    randomInt: () => 0,
+    summaryEventThreshold: 2
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(existsSync(chatLogFile), true);
+  assert.equal(existsSync(ledgerLogFile), true);
+  assert.equal(existsSync(stateFile), true);
+
+  const chatEvents = readJsonLines(chatLogFile);
+  assert.equal(chatEvents.length, 2);
+  assert.equal(chatEvents[0].direction, "inbound");
+  assert.equal(chatEvents[1].direction, "outbound");
+
+  const ledgerEvents = readJsonLines(ledgerLogFile);
+  assert.match(ledgerEvents[0].kind, /character\.created/);
+  assert.match(ledgerEvents.at(-1).kind, /summary\.rollup/);
+
+  const stateSnapshot = JSON.parse(readFileSync(stateFile, "utf8"));
+  assert.equal(stateSnapshot.sessionMode, "kp");
+  assert.equal(stateSnapshot.runtimeProfileId, "maimai-kp-v1");
+  assert.match(JSON.stringify(stateSnapshot), /医生/);
+
+  const summaryFiles = readdirSync(summaryDir);
+  assert.equal(summaryFiles.length, 1);
+  const summaryText = readFileSync(join(summaryDir, summaryFiles[0]), "utf8");
+  assert.match(summaryText, /AI-KP Summary/);
+  assert.match(summaryText, /给我快速车卡，职业医生/);
+
   rmSync(storageRoot, { recursive: true, force: true });
 });
 

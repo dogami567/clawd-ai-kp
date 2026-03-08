@@ -8,8 +8,9 @@ const {
   loadSessionApi,
   createCharacter,
   createInvestigatorFromTraditional,
-  generateTraditionalAttributes,
+  generateTraditionalAttributesDetailed,
   getOccupationTemplate,
+  listOccupationTemplates,
   QUICK_FIRE_VALUES,
   processScenarioTurn,
   settleSessionApi,
@@ -24,6 +25,50 @@ const {
   formatStoryPackSummary
 } = require("../../core/src/index");
 const { resolveSkillDefault } = require("../../core/src/skill-defaults");
+const {
+  ensureSummaryState,
+  appendChatLog,
+  appendOperationLog,
+  writeStateSnapshot,
+  maybeRollupSummaries
+} = require("./log-store");
+
+const KP_RUNTIME_PROMPT = [
+  "你现在是 AI 跑团的 KP，名字叫麦麦。",
+  "语气可爱、口语化，会自然带一点颜文字，但不要说教，也别端着像模板回复。",
+  "你要优先理解玩家自然语言意图，能自动帮他们触发车卡、检定、推进场景，不要求玩家背指令。",
+  "公开骰一定给玩家看清楚点数、目标值和结果；暗骰不要把点数直接抖给玩家。"
+].join("\n");
+
+const OCCUPATION_ALIASES = Object.freeze([
+  ["journalist", "journalist"],
+  ["reporter", "journalist"],
+  ["记者", "journalist"],
+  ["detective", "detective"],
+  ["private detective", "detective"],
+  ["私家侦探", "detective"],
+  ["侦探", "detective"],
+  ["doctor", "doctor"],
+  ["physician", "doctor"],
+  ["医生", "doctor"],
+  ["professor", "professor"],
+  ["学者", "professor"],
+  ["教授", "professor"],
+  ["artist", "artist"],
+  ["singer", "artist"],
+  ["艺术家", "artist"],
+  ["歌手", "artist"],
+  ["veteran", "veteran"],
+  ["soldier", "veteran"],
+  ["退伍军人", "veteran"],
+  ["老兵", "veteran"],
+  ["军人", "veteran"],
+  ["dilettante", "dilettante"],
+  ["socialite", "dilettante"],
+  ["富家子", "dilettante"],
+  ["社交名流", "dilettante"],
+  ["名流", "dilettante"]
+]);
 
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
@@ -31,6 +76,10 @@ function cloneJson(value) {
 
 function defaultRandomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function getKpRuntimePrompt() {
+  return KP_RUNTIME_PROMPT;
 }
 
 function sanitizeSegment(value) {
@@ -45,6 +94,42 @@ function getSenderName(event = {}) {
   return String(event.sender?.card || event.sender?.nickname || event.user_name || `玩家${event.user_id || "unknown"}`);
 }
 
+function normalizeIntentText(text = "") {
+  return String(text).trim().toLowerCase();
+}
+
+function includesAny(text, keywords = []) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function getOccupationAliasPairs() {
+  const dynamicPairs = listOccupationTemplates().flatMap((occupation) => ([
+    [occupation.key.toLowerCase(), occupation.key],
+    [occupation.name.toLowerCase(), occupation.key]
+  ]));
+  return [...dynamicPairs, ...OCCUPATION_ALIASES];
+}
+
+function extractOccupationKeyFromText(text) {
+  if (!text) return null;
+  const normalized = normalizeIntentText(text);
+  const aliasPairs = getOccupationAliasPairs()
+    .map(([alias, key]) => [String(alias).toLowerCase(), key])
+    .sort((left, right) => right[0].length - left[0].length);
+
+  for (const [alias, key] of aliasPairs) {
+    if (normalized.includes(alias)) {
+      return key;
+    }
+  }
+
+  return null;
+}
+
+function detectOccupationKeyFromText(text, fallback = "journalist") {
+  return extractOccupationKeyFromText(text) || fallback;
+}
+
 function buildConversationKey(event = {}) {
   if (event.group_id) return `onebot-group-${sanitizeSegment(event.group_id)}`;
   if (event.user_id) return `onebot-dm-${sanitizeSegment(event.user_id)}`;
@@ -54,13 +139,22 @@ function buildConversationKey(event = {}) {
 function buildStorageLayout(storageRoot, event) {
   const conversationKey = buildConversationKey(event);
   const root = storageRoot || join(__dirname, "..", "..", "runtime", "onebot");
+  const logsConversationDir = join(root, "logs", conversationKey);
   return {
     root,
     conversationKey,
     sessionsDir: join(root, "sessions"),
     metaDir: join(root, "meta"),
     sessionFile: join(root, "sessions", `${conversationKey}.json`),
-    metaFile: join(root, "meta", `${conversationKey}.json`)
+    metaFile: join(root, "meta", `${conversationKey}.json`),
+    logsConversationDir,
+    chatLogDir: join(logsConversationDir, "chat"),
+    ledgerLogDir: join(logsConversationDir, "ledger"),
+    stateDir: join(logsConversationDir, "state"),
+    summaryDir: join(logsConversationDir, "summaries"),
+    chatLogFile: join(logsConversationDir, "chat", "events.jsonl"),
+    ledgerLogFile: join(logsConversationDir, "ledger", "operations.jsonl"),
+    stateFile: join(logsConversationDir, "state", "latest.json")
   };
 }
 
@@ -115,12 +209,15 @@ function buildInitialMeta(event, layout, scenarioId) {
     actorsByUserId: {},
     knownUsers: [],
     messageCount: 0,
+    sessionMode: "idle",
+    runtimeProfileId: "maimai-kp-v1",
     turnState: {
       actorOrder: [],
       currentActorId: null,
       round: 1
     }
   };
+  ensureSummaryState(meta);
   rememberUser(meta, event);
   return meta;
 }
@@ -134,6 +231,9 @@ function ensureConversationSession(event, options = {}) {
 
   if (meta && existsSync(layout.sessionFile)) {
     sessionState = loadSessionApi(layout.sessionFile);
+    ensureSummaryState(meta);
+    if (!meta.sessionMode) meta.sessionMode = "idle";
+    if (!meta.runtimeProfileId) meta.runtimeProfileId = "maimai-kp-v1";
     rememberUser(meta, event);
     saveMeta(layout, meta);
     return { layout, meta, sessionState, created: false };
@@ -317,9 +417,10 @@ function buildGeneratedBase(event, occupationKey) {
   };
 }
 
-function createRolledInvestigator(event, occupationKey = "journalist", randomInt = defaultRandomInt) {
+function buildTraditionalInvestigatorBundle(event, occupationKey = "journalist", randomInt = defaultRandomInt) {
   const occupation = getOccupationTemplate(occupationKey);
-  const rolled = generateTraditionalAttributes(randomInt);
+  const generated = generateTraditionalAttributesDetailed(randomInt);
+  const rolled = generated.attributes;
   const attributes = {
     STR: rolled.STR,
     CON: rolled.CON,
@@ -334,26 +435,33 @@ function createRolledInvestigator(event, occupationKey = "journalist", randomInt
   const creditRating = pickCreditRating(occupation);
   const skills = buildStarterSkills(attributes, occupation, creditRating);
 
-  return createInvestigatorFromTraditional({
-    ...buildGeneratedBase(event, occupationKey),
-    creditRating,
-    luck: rolled.Luck,
-    attributeAssignments: {
-      STR: rolled.STR,
-      CON: rolled.CON,
-      DEX: rolled.DEX,
-      APP: rolled.APP,
-      POW: rolled.POW,
-      SIZ: rolled.SIZ,
-      INT: rolled.INT,
-      EDU: rolled.EDU
-    },
-    skills,
-    inventory: [
-      { name: "手电", category: "tool", quantity: 1 },
-      { name: "笔记本", category: "tool", quantity: 1 }
-    ]
-  }, randomInt);
+  return {
+    generated,
+    investigator: createInvestigatorFromTraditional({
+      ...buildGeneratedBase(event, occupationKey),
+      creditRating,
+      luck: rolled.Luck,
+      attributeAssignments: {
+        STR: rolled.STR,
+        CON: rolled.CON,
+        DEX: rolled.DEX,
+        APP: rolled.APP,
+        POW: rolled.POW,
+        SIZ: rolled.SIZ,
+        INT: rolled.INT,
+        EDU: rolled.EDU
+      },
+      skills,
+      inventory: [
+        { name: "手电", category: "tool", quantity: 1 },
+        { name: "笔记本", category: "tool", quantity: 1 }
+      ]
+    }, randomInt)
+  };
+}
+
+function createRolledInvestigator(event, occupationKey = "journalist", randomInt = defaultRandomInt) {
+  return buildTraditionalInvestigatorBundle(event, occupationKey, randomInt).investigator;
 }
 
 function createQuickfireInvestigator(event, occupationKey = "journalist", randomInt = defaultRandomInt) {
@@ -374,6 +482,32 @@ function createQuickfireInvestigator(event, occupationKey = "journalist", random
       { name: "笔记本", category: "tool", quantity: 1 }
     ]
   });
+}
+
+function buildInvestigatorBundleForMode(event, mode, occupationKey, randomInt) {
+  if (mode === "quickfire") {
+    const investigator = createQuickfireInvestigator(event, occupationKey, randomInt);
+    return {
+      mode,
+      occupationKey,
+      investigator,
+      generation: {
+        mode,
+        quickfireAssignments: { ...investigator.attributes, Luck: investigator.resources.luck }
+      }
+    };
+  }
+
+  const bundle = buildTraditionalInvestigatorBundle(event, occupationKey, randomInt);
+  return {
+    mode,
+    occupationKey,
+    investigator: bundle.investigator,
+    generation: {
+      mode,
+      breakdown: bundle.generated.breakdown
+    }
+  };
 }
 
 function getActorForUser(stateBundle, userId) {
@@ -649,7 +783,7 @@ function formatCheckResultLine(event) {
   if (event.mode === "hidden") {
     return `暗骰：${event.skillKey}（${event.result.successLevel}）`;
   }
-  return `检定：${event.skillKey} ${event.roll}/${event.targetValue}（${event.result.successLevel}）`;
+  return `投掷：${event.roll}（目标 ${event.targetValue}，${event.result.successLevel}）`;
 }
 
 function formatSceneBeat(sessionState) {
@@ -723,6 +857,42 @@ function formatInvestigatorSummary(investigator) {
   ].join("\n");
 }
 
+function formatTraditionalBreakdownLines(breakdown = []) {
+  if (!breakdown.length) return [];
+  const lines = ["属性骰："];
+  for (const entry of breakdown) {
+    const diceText = entry.dice.join("+");
+    const modifierText = entry.modifier ? `+${entry.modifier}` : "";
+    lines.push(`- ${entry.key}：${entry.formula}（${diceText}${modifierText ? `${modifierText}` : ""}=${entry.rawTotal}）→ ${entry.value}`);
+  }
+  return lines;
+}
+
+function formatQuickfireBreakdownLines(investigator) {
+  const orderedKeys = ["STR", "CON", "DEX", "APP", "POW", "SIZ", "INT", "EDU"];
+  return [
+    "快速分配：",
+    `- ${orderedKeys.map((key) => `${key} ${investigator.attributes[key]}`).join(" / ")}`,
+    `- Luck ${investigator.resources.luck}`
+  ];
+}
+
+function formatGeneratedInvestigatorReply(bundle) {
+  const modeText = bundle.mode === "quickfire" ? "快速车卡" : "传统随机车卡";
+  const lines = [
+    `${modeText} 已经给你落好了：`,
+    formatInvestigatorSummary(bundle.investigator)
+  ];
+
+  if (bundle.mode === "quickfire") {
+    lines.push(...formatQuickfireBreakdownLines(bundle.investigator));
+  } else {
+    lines.push(...formatTraditionalBreakdownLines(bundle.generation.breakdown));
+  }
+
+  return lines.join("\n");
+}
+
 function formatStartReply(stateBundle, actorResult) {
   const opening = stateBundle.sessionState.scene.meta?.opening || "场景已经起好了。";
   const prompts = stateBundle.sessionState.scene.meta?.starterPrompts || [];
@@ -730,13 +900,14 @@ function formatStartReply(stateBundle, actorResult) {
     ? `当前绑定调查员：${actorResult.investigator.name}。`
     : "你现在还没车卡，先建卡再入场会更像真跑团。";
   const promptLine = prompts.length ? `场景里可以直接试这些：\n- ${prompts.join("\n- ")}` : "你现在可以直接说行动。";
-  const helpLine = "先建卡：/aikp roll journalist 或 /aikp quickfire artist；多人：/aikp party；切人：/aikp next";
+  const helpLine = "自然语言就行：比如“我想一次全车完卡，角色选记者”“给我快速车卡，职业医生”“我借着手电去看祭坛背后的刮痕”；继续用指令也行：`/aikp roll journalist`、`/aikp quickfire artist`。";
   return [joinLine, opening, promptLine, helpLine].join("\n");
 }
 
 function formatHelpReply() {
   return [
     "AI-KP 可用指令：",
+    "- 平时直接说自然语言也行，例如：我想一次全车完卡，角色选记者",
     "- /aikp start 重新开场",
     "- /aikp roll <occupationKey> 单人传统随机车卡",
     "- /aikp quickfire <occupationKey> 单人快速车卡",
@@ -781,40 +952,50 @@ function parseCommand(text) {
 
 function resolveOccupationKey(rawValue, fallback = "journalist") {
   if (!rawValue) return fallback;
+  const detected = detectOccupationKeyFromText(rawValue, fallback);
   try {
-    getOccupationTemplate(rawValue);
-    return rawValue;
+    getOccupationTemplate(detected);
+    return detected;
   } catch {
     return fallback;
   }
 }
 
 function createInvestigatorForMode(event, mode, occupationKey, randomInt) {
-  if (mode === "quickfire") {
-    return createQuickfireInvestigator(event, occupationKey, randomInt);
-  }
-  return createRolledInvestigator(event, occupationKey, randomInt);
+  return buildInvestigatorBundleForMode(event, mode, occupationKey, randomInt);
 }
 
-function formatPartyRollReply(createdInvestigators, mode) {
+function formatPartyRollReply(createdBundles, mode) {
   const modeText = mode === "quickfire" ? "快速车卡" : "传统随机车卡";
   const lines = [`这轮我已经帮当前这批玩家批量做了 ${modeText}：`];
-  for (const investigator of createdInvestigators) {
+  for (const bundle of createdBundles) {
+    const investigator = bundle.investigator;
     lines.push(`- ${investigator.name}｜${investigator.occupation}｜HP ${investigator.resources.hp}｜SAN ${investigator.resources.san}`);
+    if (bundle.mode === "quickfire") {
+      lines.push(`  ${formatQuickfireBreakdownLines(investigator).slice(1).join("｜")}`);
+      continue;
+    }
+
+    const highlight = (bundle.generation.breakdown || [])
+      .map((entry) => `${entry.key} ${entry.rawTotal}->${entry.value}`)
+      .join(" / ");
+    lines.push(`  ${highlight}`);
   }
   lines.push("现在可以用 `/aikp party` 看队伍面板，用 `/aikp next` 往下一位切。\n");
   return lines.join("\n");
 }
 
 function runSingleRollCommand(event, stateBundle, mode, occupationKey, randomInt) {
-  const investigator = createInvestigatorForMode(event, mode, occupationKey, randomInt);
-  upsertInvestigatorForUser(event, stateBundle, investigator);
-  const modeText = mode === "quickfire" ? "快速车卡" : "传统随机车卡";
-  return `${modeText} 已经给你落好了：\n${formatInvestigatorSummary(investigator)}`;
+  const bundle = createInvestigatorForMode(event, mode, occupationKey, randomInt);
+  upsertInvestigatorForUser(event, stateBundle, bundle.investigator);
+  return {
+    reply: formatGeneratedInvestigatorReply(bundle),
+    bundle
+  };
 }
 
 function runPartyRollCommand(stateBundle, mode, occupationKey, randomInt) {
-  const createdInvestigators = [];
+  const createdBundles = [];
   const knownUsers = Array.isArray(stateBundle.meta.knownUsers) ? stateBundle.meta.knownUsers : [];
 
   for (const user of knownUsers) {
@@ -824,17 +1005,273 @@ function runPartyRollCommand(stateBundle, mode, occupationKey, randomInt) {
     };
     const existing = getActorForUser(stateBundle, user.userId);
     const resolvedOccupation = occupationKey || existing?.occupationKey || "journalist";
-    const investigator = createInvestigatorForMode(fakeEvent, mode, resolvedOccupation, randomInt);
-    addInvestigator(stateBundle.sessionState, investigator);
-    stateBundle.meta.actorsByUserId[String(user.userId)] = investigator.id;
-    syncActorIntoTurnState(stateBundle.meta, investigator.id);
-    createdInvestigators.push(investigator);
+    const bundle = createInvestigatorForMode(fakeEvent, mode, resolvedOccupation, randomInt);
+    addInvestigator(stateBundle.sessionState, bundle.investigator);
+    stateBundle.meta.actorsByUserId[String(user.userId)] = bundle.investigator.id;
+    syncActorIntoTurnState(stateBundle.meta, bundle.investigator.id);
+    createdBundles.push({
+      ...bundle,
+      sourceUserId: String(user.userId),
+      sourceUserName: user.name
+    });
   }
 
   stateBundle.meta.updatedAt = new Date().toISOString();
   saveSessionApi(stateBundle.sessionState, stateBundle.layout.sessionFile, { meta: { conversationKey: stateBundle.layout.conversationKey } });
   saveMeta(stateBundle.layout, stateBundle.meta);
-  return formatPartyRollReply(createdInvestigators, mode);
+  return {
+    reply: formatPartyRollReply(createdBundles, mode),
+    bundles: createdBundles
+  };
+}
+
+function buildOperationEvent(kind, summary, payload = {}) {
+  return {
+    timestamp: new Date().toISOString(),
+    kind,
+    summary,
+    ...payload
+  };
+}
+
+function setSessionMode(stateBundle, sessionMode) {
+  stateBundle.meta.sessionMode = sessionMode;
+  stateBundle.meta.updatedAt = new Date().toISOString();
+  saveMeta(stateBundle.layout, stateBundle.meta);
+  return sessionMode;
+}
+
+function buildChatLogEntry(event, direction, message) {
+  return {
+    timestamp: new Date().toISOString(),
+    conversationKey: buildConversationKey(event),
+    direction,
+    message,
+    messageId: event.message_id || null,
+    messageType: event.message_type || (event.group_id ? "group" : "private"),
+    userId: event.user_id != null ? String(event.user_id) : null,
+    senderName: getSenderName(event)
+  };
+}
+
+function buildStateSnapshot(stateBundle) {
+  const turnState = ensureTurnState(stateBundle.meta);
+  const currentActor = turnState.currentActorId ? stateBundle.sessionState.investigators[turnState.currentActorId] : null;
+  return {
+    updatedAt: new Date().toISOString(),
+    conversationKey: stateBundle.layout.conversationKey,
+    sessionMode: stateBundle.meta.sessionMode || "idle",
+    runtimeProfileId: stateBundle.meta.runtimeProfileId || "maimai-kp-v1",
+    summaryState: cloneJson(stateBundle.meta.summaryState || {}),
+    knownUsers: cloneJson(stateBundle.meta.knownUsers || []),
+    turnState: {
+      actorOrder: [...turnState.actorOrder],
+      currentActorId: turnState.currentActorId,
+      currentActorName: currentActor?.name || null,
+      round: turnState.round
+    },
+    revealedClues: (stateBundle.sessionState.scene?.clues || [])
+      .filter((item) => item.revealed)
+      .map((item) => item.title),
+    scene: {
+      summary: stateBundle.sessionState.scene?.summary || null,
+      location: stateBundle.sessionState.scene?.location || null,
+      dangerLevel: stateBundle.sessionState.scene?.threats?.dangerLevel || null,
+      exposure: stateBundle.sessionState.scene?.threats?.exposure ?? 0,
+      pressure: stateBundle.sessionState.scene?.threats?.pressure ?? 0,
+      timelineMinute: stateBundle.sessionState.scene?.timeState?.timelineMinute ?? 0,
+      combatRound: stateBundle.sessionState.scene?.timeState?.combatRound ?? 0
+    },
+    investigators: Object.values(stateBundle.sessionState.investigators || {}).map((investigator) => ({
+      id: investigator.id,
+      name: investigator.name,
+      occupation: investigator.occupation,
+      occupationKey: investigator.occupationKey,
+      hp: investigator.resources?.hp ?? null,
+      san: investigator.resources?.san ?? null,
+      luck: investigator.resources?.luck ?? null
+    })),
+    sessionState: cloneJson(stateBundle.sessionState)
+  };
+}
+
+function flushConversationArtifacts(event, stateBundle, response, options = {}) {
+  if (!stateBundle) {
+    return {
+      ...response,
+      sessionState: response.sessionState ?? null
+    };
+  }
+
+  if (response.reply) {
+    appendChatLog(stateBundle.layout, buildChatLogEntry(event, "outbound", response.reply));
+  }
+
+  const operationEvents = Array.isArray(options.operationEvents) ? options.operationEvents : [];
+  for (const operationEvent of operationEvents) {
+    appendOperationLog(stateBundle.layout, operationEvent);
+  }
+
+  let stateSnapshot = buildStateSnapshot(stateBundle);
+  const summaryChunk = maybeRollupSummaries(stateBundle.layout, stateBundle.meta, stateSnapshot, options.summaryOptions || {});
+  if (summaryChunk) {
+    appendOperationLog(
+      stateBundle.layout,
+      buildOperationEvent("summary.rollup", `生成摘要块 ${summaryChunk.chunkName}`, {
+        chunkName: summaryChunk.chunkName,
+        pendingChatCount: summaryChunk.pendingChatCount
+      })
+    );
+    stateSnapshot = buildStateSnapshot(stateBundle);
+  }
+
+  writeStateSnapshot(stateBundle.layout, stateSnapshot);
+  saveMeta(stateBundle.layout, stateBundle.meta);
+
+  return {
+    ...response,
+    sessionState: cloneJson(stateBundle.sessionState)
+  };
+}
+
+function describeOperationOutcome(resultEvent = {}) {
+  if (!resultEvent?.result) return null;
+  if (resultEvent.mode === "hidden") {
+    return `${resultEvent.skillKey}（暗骰 ${resultEvent.result.successLevel}）`;
+  }
+  return `${resultEvent.skillKey} 投掷 ${resultEvent.roll}/${resultEvent.targetValue}（${resultEvent.result.successLevel}）`;
+}
+
+function buildRollOperationEvents(event, result, partyMode = false) {
+  if (partyMode) {
+    return (result.bundles || []).map((bundle) => {
+      const description = bundle.mode === "quickfire"
+        ? `${bundle.investigator.name} 快速车卡完成，职业 ${bundle.investigator.occupation}`
+        : `${bundle.investigator.name} 传统车卡完成，职业 ${bundle.investigator.occupation}`;
+      return buildOperationEvent("character.created", description, {
+        userId: bundle.sourceUserId || null,
+        userName: bundle.sourceUserName || null,
+        actorId: bundle.investigator.id,
+        occupationKey: bundle.occupationKey,
+        mode: bundle.mode,
+        generation: cloneJson(bundle.generation)
+      });
+    });
+  }
+
+  if (!result.bundle) return [];
+  const description = result.bundle.mode === "quickfire"
+    ? `${getSenderName(event)} 快速车卡完成，职业 ${result.bundle.investigator.occupation}`
+    : `${getSenderName(event)} 传统车卡完成，职业 ${result.bundle.investigator.occupation}`;
+  return [
+    buildOperationEvent("character.created", description, {
+      userId: event.user_id != null ? String(event.user_id) : null,
+      actorId: result.bundle.investigator.id,
+      occupationKey: result.bundle.occupationKey,
+      mode: result.bundle.mode,
+      generation: cloneJson(result.bundle.generation)
+    })
+  ];
+}
+
+function detectNaturalIntent(text, actorResult = {}) {
+  const normalized = normalizeIntentText(text);
+  if (!normalized) return null;
+
+  if (includesAny(normalized, ["不跑了", "先不跑了", "结束跑团", "收团", "退出跑团", "先停团"])) {
+    return { kind: "exit" };
+  }
+
+  if (includesAny(normalized, ["看看状态", "现在什么情况", "当前状态", "场景状态"])) {
+    return { kind: "state" };
+  }
+
+  if (includesAny(normalized, ["总结一下", "回顾一下", "复盘一下", "recap"])) {
+    return { kind: "recap" };
+  }
+
+  if (includesAny(normalized, ["看看队伍", "队伍情况", "谁在场", "队伍面板"])) {
+    return { kind: "party" };
+  }
+
+  const explicitOccupationKey = extractOccupationKeyFromText(text);
+  const occupationKey = explicitOccupationKey || actorResult.investigator?.occupationKey || "journalist";
+  const wantsQuickfire = includesAny(normalized, ["quickfire", "快速车卡", "快速建卡", "快车卡", "快速卡"]);
+  const wantsRoll = includesAny(normalized, ["车卡", "建卡", "开卡", "人物卡", "角色卡", "roll卡", "roll"]) || includesAny(normalized, ["角色选", "职业选", "职业是", "职业当", "我选"]);
+  const wantsParty = includesAny(normalized, ["全车", "全员", "一起车", "大家都", "批量车卡", "一次全车完卡", "一起开卡"]);
+  const wantsStart = includesAny(normalized, ["想跑团", "开始跑团", "开始吧", "开团", "开局", "进游戏", "进入游戏", "开始跑", "想开团", "想玩coc"]);
+
+  if (wantsRoll || (!actorResult.actorId && wantsStart && explicitOccupationKey)) {
+    return {
+      kind: "roll",
+      mode: wantsQuickfire ? "quickfire" : "traditional",
+      party: wantsParty,
+      occupationKey
+    };
+  }
+
+  if (wantsStart) {
+    return { kind: "start" };
+  }
+
+  return null;
+}
+
+function handleNaturalIntent(text, event, stateBundle, actorResult, options = {}) {
+  const naturalIntent = detectNaturalIntent(text, actorResult);
+  if (!naturalIntent) return null;
+  const randomInt = options.randomInt || defaultRandomInt;
+
+  if (naturalIntent.kind === "exit") {
+    setSessionMode(stateBundle, "idle");
+    return {
+      reply: "好，这局我先帮你收住啦。之后想继续，直接说“开始跑团”或者“我想车卡”就能再接上。",
+      operationEvents: [buildOperationEvent("session.exit", `${getSenderName(event)} 结束了本群 AI-KP 状态`, {
+        userId: event.user_id != null ? String(event.user_id) : null
+      })]
+    };
+  }
+
+  if (naturalIntent.kind === "state") {
+    return { reply: formatStateSummary(stateBundle.sessionState, stateBundle.meta) };
+  }
+
+  if (naturalIntent.kind === "recap") {
+    return { reply: formatRecapReply(stateBundle.sessionState) };
+  }
+
+  if (naturalIntent.kind === "party") {
+    return { reply: formatPartySummary(stateBundle) };
+  }
+
+  if (naturalIntent.kind === "start") {
+    setSessionMode(stateBundle, "kp");
+    return {
+      reply: formatStartReply(stateBundle, actorResult),
+      operationEvents: [buildOperationEvent("session.enter", `${getSenderName(event)} 激活了本群 AI-KP`, {
+        userId: event.user_id != null ? String(event.user_id) : null
+      })]
+    };
+  }
+
+  if (naturalIntent.kind === "roll") {
+    setSessionMode(stateBundle, "kp");
+    if (naturalIntent.party) {
+      const rollResult = runPartyRollCommand(stateBundle, naturalIntent.mode, naturalIntent.occupationKey, randomInt);
+      return {
+        reply: rollResult.reply,
+        operationEvents: buildRollOperationEvents(event, rollResult, true)
+      };
+    }
+
+    const rollResult = runSingleRollCommand(event, stateBundle, naturalIntent.mode, naturalIntent.occupationKey, randomInt);
+    return {
+      reply: rollResult.reply,
+      operationEvents: buildRollOperationEvents(event, rollResult, false)
+    };
+  }
+
+  return null;
 }
 
 function handleCommand(text, event, stateBundle, actorResult, options = {}) {
@@ -894,10 +1331,17 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
     return { reply: currentActor ? `现在轮到 ${currentActor.name}（第 ${turnState.round} 轮）。` : "现在还没指定当前行动者。" };
   }
 
-  if (text.trim() === "/aikp start" || text.trim() === "/aikp reset") {
+  if (text.trim() === "/aikp reset") {
     const fresh = rebuildConversationSession(event, { storageRoot: stateBundle.layout.root, scenarioId: stateBundle.meta.scenarioId, reset: true });
+    setSessionMode(fresh, "kp");
     const actor = ensureActorForUser(event, fresh, { autoCreateInvestigator: false });
-    return { reply: formatStartReply(fresh, actor), stateBundle: fresh };
+    return {
+      reply: formatStartReply(fresh, actor),
+      stateBundle: fresh,
+      operationEvents: [buildOperationEvent("session.reset", `${getSenderName(event)} 重置了当前会话`, {
+        userId: event.user_id != null ? String(event.user_id) : null
+      })]
+    };
   }
 
   if (text.trim() === "/aikp join") {
@@ -914,27 +1358,53 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
   if (text.trim() === "/aikp settle") {
     const settlement = settleSessionApi(stateBundle.sessionState);
     saveSessionApi(stateBundle.sessionState, stateBundle.layout.sessionFile, { meta: { conversationKey: stateBundle.layout.conversationKey } });
-    return { reply: formatSettlementReply(settlement) };
+    return {
+      reply: formatSettlementReply(settlement),
+      operationEvents: [buildOperationEvent("session.settle", `${getSenderName(event)} 生成了结团摘要`, {
+        userId: event.user_id != null ? String(event.user_id) : null,
+        settlement: cloneJson(settlement)
+      })]
+    };
   }
 
   if (command === "/aikp" && args[0] === "roll") {
     const occupationKey = resolveOccupationKey(args[1], actorResult.investigator?.occupationKey || "journalist");
-    return { reply: runSingleRollCommand(event, stateBundle, "traditional", occupationKey, randomInt) };
+    setSessionMode(stateBundle, "kp");
+    const rollResult = runSingleRollCommand(event, stateBundle, "traditional", occupationKey, randomInt);
+    return {
+      reply: rollResult.reply,
+      operationEvents: buildRollOperationEvents(event, rollResult, false)
+    };
   }
 
   if (command === "/aikp" && args[0] === "quickfire") {
     const occupationKey = resolveOccupationKey(args[1], actorResult.investigator?.occupationKey || "journalist");
-    return { reply: runSingleRollCommand(event, stateBundle, "quickfire", occupationKey, randomInt) };
+    setSessionMode(stateBundle, "kp");
+    const rollResult = runSingleRollCommand(event, stateBundle, "quickfire", occupationKey, randomInt);
+    return {
+      reply: rollResult.reply,
+      operationEvents: buildRollOperationEvents(event, rollResult, false)
+    };
   }
 
   if (command === "/aikp" && args[0] === "party-roll") {
     const occupationKey = args[1] ? resolveOccupationKey(args[1], "journalist") : null;
-    return { reply: runPartyRollCommand(stateBundle, "traditional", occupationKey, randomInt) };
+    setSessionMode(stateBundle, "kp");
+    const rollResult = runPartyRollCommand(stateBundle, "traditional", occupationKey, randomInt);
+    return {
+      reply: rollResult.reply,
+      operationEvents: buildRollOperationEvents(event, rollResult, true)
+    };
   }
 
   if (command === "/aikp" && args[0] === "party-quickfire") {
     const occupationKey = args[1] ? resolveOccupationKey(args[1], "journalist") : null;
-    return { reply: runPartyRollCommand(stateBundle, "quickfire", occupationKey, randomInt) };
+    setSessionMode(stateBundle, "kp");
+    const rollResult = runPartyRollCommand(stateBundle, "quickfire", occupationKey, randomInt);
+    return {
+      reply: rollResult.reply,
+      operationEvents: buildRollOperationEvents(event, rollResult, true)
+    };
   }
 
   if (command === "/aikp" && args[0] === "focus") {
@@ -943,7 +1413,13 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
       return { reply: "我没找到你要切到的那位。可以用玩家名、调查员名、userId 来指。" };
     }
     const turnState = setCurrentActor(stateBundle, entry.actorId);
-    return { reply: `好，现在 spotlight 切到 ${entry.investigator.name} 了（第 ${turnState.round} 轮）。` };
+    return {
+      reply: `好，现在 spotlight 切到 ${entry.investigator.name} 了（第 ${turnState.round} 轮）。`,
+      operationEvents: [buildOperationEvent("turn.focus", `${getSenderName(event)} 把 spotlight 切到了 ${entry.investigator.name}`, {
+        actorId: entry.actorId,
+        round: turnState.round
+      })]
+    };
   }
 
   if (command === "/aikp" && args[0] === "goto") {
@@ -955,7 +1431,12 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
     const campaign = loadCampaignTemplate(campaignId);
     transitionCampaignScene(stateBundle.sessionState, campaign, targetSceneId);
     saveSessionApi(stateBundle.sessionState, stateBundle.layout.sessionFile, { meta: { conversationKey: stateBundle.layout.conversationKey } });
-    return { reply: `好，这幕我先切到 ${targetSceneId} 了。\n${formatCampaignSummary(getCurrentCampaign(stateBundle.sessionState))}` };
+    return {
+      reply: `好，这幕我先切到 ${targetSceneId} 了。\n${formatCampaignSummary(getCurrentCampaign(stateBundle.sessionState))}`,
+      operationEvents: [buildOperationEvent("campaign.goto", `${getSenderName(event)} 切换到了场景 ${targetSceneId}`, {
+        targetSceneId
+      })]
+    };
   }
 
   if (command === "/aikp" && args[0] === "advance") {
@@ -967,13 +1448,26 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
       return { reply: "这会儿还没有满足条件的下一幕钩子。先继续推进，或者用 `/aikp hooks` 看当前哪些是锁着的。" };
     }
     saveSessionApi(stateBundle.sessionState, stateBundle.layout.sessionFile, { meta: { conversationKey: stateBundle.layout.conversationKey } });
-    return { reply: `好，我按钩子 ${chosen.id} 把这幕往后推进了。\n${formatCampaignSummary(getCurrentCampaign(stateBundle.sessionState))}` };
+    return {
+      reply: `好，我按钩子 ${chosen.id} 把这幕往后推进了。\n${formatCampaignSummary(getCurrentCampaign(stateBundle.sessionState))}`,
+      operationEvents: [buildOperationEvent("campaign.advance", `${getSenderName(event)} 按钩子 ${chosen.id} 推进了剧情`, {
+        hookId: chosen.id
+      })]
+    };
   }
 
   if (command === "/aikp" && args[0] === "next") {
     const turnState = advanceCurrentActor(stateBundle);
     const currentActor = turnState.currentActorId ? stateBundle.sessionState.investigators[turnState.currentActorId] : null;
-    return { reply: currentActor ? `下一位是 ${currentActor.name}（第 ${turnState.round} 轮）。` : "现在还没有可轮转的调查员。" };
+    return {
+      reply: currentActor ? `下一位是 ${currentActor.name}（第 ${turnState.round} 轮）。` : "现在还没有可轮转的调查员。",
+      operationEvents: currentActor
+        ? [buildOperationEvent("turn.advance", `${getSenderName(event)} 把当前聚焦推进到 ${currentActor.name}`, {
+          actorId: currentActor.id,
+          round: turnState.round
+        })]
+        : []
+    };
   }
 
   return null;
@@ -981,39 +1475,75 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
 
 function handleOneBotMessage(event, options = {}) {
   const text = getMessageText(event);
+  const summaryOptions = {
+    summaryEventThreshold: options.summaryEventThreshold,
+    summaryCharThreshold: options.summaryCharThreshold
+  };
   const stateBundle = maybeResetSession(event, options);
   rememberUser(stateBundle.meta, event);
+  stateBundle.meta.messageCount += text ? 1 : 0;
+  stateBundle.meta.updatedAt = new Date().toISOString();
   saveMeta(stateBundle.layout, stateBundle.meta);
+  if (text) {
+    appendChatLog(stateBundle.layout, buildChatLogEntry(event, "inbound", text));
+  }
   const actorResult = ensureActorForUser(event, stateBundle, { ...options, autoCreateInvestigator: false });
 
   if (!text || text === "/aikp start") {
-    return {
+    if (text === "/aikp start") {
+      setSessionMode(stateBundle, "kp");
+    }
+    return flushConversationArtifacts(event, stateBundle, {
       ok: true,
-      reply: formatStartReply(stateBundle, actorResult),
-      sessionState: cloneJson(stateBundle.sessionState)
-    };
+      reply: formatStartReply(stateBundle, actorResult)
+    }, {
+      summaryOptions,
+      operationEvents: text === "/aikp start"
+        ? [buildOperationEvent("session.enter", `${getSenderName(event)} 查看了开场面板`, {
+          userId: event.user_id != null ? String(event.user_id) : null
+        })]
+        : []
+    });
   }
 
   const commandResult = handleCommand(text, event, stateBundle, actorResult, options);
   if (commandResult) {
     const currentBundle = commandResult.stateBundle || stateBundle;
-    return {
+    return flushConversationArtifacts(event, currentBundle, {
       ok: true,
-      reply: commandResult.reply,
-      sessionState: cloneJson(currentBundle.sessionState)
-    };
+      reply: commandResult.reply
+    }, {
+      summaryOptions,
+      operationEvents: commandResult.operationEvents || []
+    });
+  }
+
+  const naturalIntentResult = handleNaturalIntent(text, event, stateBundle, actorResult, options);
+  if (naturalIntentResult) {
+    return flushConversationArtifacts(event, stateBundle, {
+      ok: true,
+      reply: naturalIntentResult.reply
+    }, {
+      summaryOptions,
+      operationEvents: naturalIntentResult.operationEvents || []
+    });
   }
 
   if (!actorResult.actorId) {
-    return {
+    return flushConversationArtifacts(event, stateBundle, {
       ok: false,
       reason: "missing_investigator",
-      reply: "你还没车卡喔。先 `/aikp roll journalist` 自己 roll，或者 `/aikp quickfire artist` 先来一张快速卡；群里要一起开就用 `/aikp party-roll journalist`。",
-      sessionState: cloneJson(stateBundle.sessionState)
-    };
+      reply: "你还没车卡喔。可以直接说“我想一次全车完卡，角色选记者”，或者“给我快速车卡，职业医生”；要继续用指令也行：`/aikp roll journalist`。"
+    }, {
+      summaryOptions,
+      operationEvents: [buildOperationEvent("turn.blocked", `${getSenderName(event)} 想行动，但还没有调查员卡`, {
+        userId: event.user_id != null ? String(event.user_id) : null
+      })]
+    });
   }
 
   const beforeSessionState = cloneJson(stateBundle.sessionState);
+  setSessionMode(stateBundle, "kp");
   const turn = processScenarioTurn(
     stateBundle.sessionState,
     actorResult.actorId,
@@ -1023,15 +1553,21 @@ function handleOneBotMessage(event, options = {}) {
   );
 
   if (!turn.ok) {
-    return {
+    return flushConversationArtifacts(event, stateBundle, {
       ok: false,
       reply: turn.reply,
-      reason: turn.reason,
-      sessionState: cloneJson(stateBundle.sessionState)
-    };
+      reason: turn.reason
+    }, {
+      summaryOptions,
+      operationEvents: [buildOperationEvent("turn.rejected", `${getSenderName(event)} 的行动没有落地：${turn.reason || "unknown"}`, {
+        userId: event.user_id != null ? String(event.user_id) : null,
+        actorId: actorResult.actorId,
+        reason: turn.reason || null,
+        intent: text
+      })]
+    });
   }
 
-  stateBundle.meta.messageCount += 1;
   stateBundle.meta.updatedAt = new Date().toISOString();
   saveSessionApi(stateBundle.sessionState, stateBundle.layout.sessionFile, { meta: { conversationKey: stateBundle.layout.conversationKey } });
   saveMeta(stateBundle.layout, stateBundle.meta);
@@ -1040,8 +1576,10 @@ function handleOneBotMessage(event, options = {}) {
   const sceneBeat = formatSceneBeat(stateBundle.sessionState);
   const optionCue = formatOptionCue(stateBundle.sessionState);
   const spotlightCue = formatSpotlightCue(stateBundle);
+  const investigator = stateBundle.sessionState.investigators[actorResult.actorId];
+  const operationSummary = describeOperationOutcome(turn.result?.event) || turn.action?.kind || "行动已处理";
 
-  return {
+  return flushConversationArtifacts(event, stateBundle, {
     ok: true,
     reply: formatTurnReply(turn.result, {
       deltaSummary,
@@ -1049,15 +1587,26 @@ function handleOneBotMessage(event, options = {}) {
       optionCue,
       spotlightCue
     }),
-    action: turn.action,
-    sessionState: cloneJson(stateBundle.sessionState)
-  };
+    action: turn.action
+  }, {
+    summaryOptions,
+    operationEvents: [
+      buildOperationEvent("scene.action", `${investigator?.name || getSenderName(event)} 执行了 ${turn.action?.kind || "unknown"}：${operationSummary}`, {
+        userId: event.user_id != null ? String(event.user_id) : null,
+        actorId: actorResult.actorId,
+        action: cloneJson(turn.action),
+        result: cloneJson(turn.result?.event || null),
+        deltaSummary
+      })
+    ]
+  });
 }
 
 module.exports = {
   sanitizeSegment,
   getMessageText,
   getSenderName,
+  getKpRuntimePrompt,
   buildConversationKey,
   buildStorageLayout,
   loadMeta,
