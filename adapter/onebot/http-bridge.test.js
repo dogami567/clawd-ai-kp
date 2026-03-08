@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("http");
-const { mkdtempSync, rmSync } = require("fs");
+const { existsSync, mkdtempSync, rmSync } = require("fs");
 const { join } = require("path");
 const { tmpdir } = require("os");
 const { createOneBotHttpBridge } = require("./http-bridge");
@@ -55,6 +55,34 @@ test("http bridge returns onebot send action from event", async () => {
   assert.equal(json.result.ok, true);
   assert.equal(json.result.sendAction.action, "send_group_msg");
   assert.match(json.result.replyText, /Spot Hidden/);
+  assert.equal(typeof json.result.contextRef, "string");
+  assert.equal(existsSync(json.result.contextRef), true);
+
+  server.close();
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("http bridge exposes stored session context", async () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-http-bridge-"));
+  const server = createOneBotHttpBridge({ storageRoot });
+  const port = await listen(server);
+
+  const rollResponse = await fetch(`http://127.0.0.1:${port}/onebot/event`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...makeEnvelope("给我快速车卡，职业医生"), includeContextPacket: true })
+  });
+  const rollJson = await rollResponse.json();
+  const contextResponse = await fetch(`http://127.0.0.1:${port}/onebot/session-context?conversationKey=onebot-group-95270001`);
+  const contextJson = await contextResponse.json();
+
+  assert.equal(rollJson.result.ok, true);
+  assert.equal(typeof rollJson.result.contextRef, "string");
+  assert.equal(rollJson.result.contextPacket.runtimeProfileId, "maimai-kp-v1");
+  assert.equal(contextJson.ok, true);
+  assert.equal(contextJson.context.conversationKey, "onebot-group-95270001");
+  assert.match(contextJson.context.injectionText, /AI-KP Runtime Prompt/);
+  assert.match(contextJson.context.injectionText, /给我快速车卡，职业医生/);
 
   server.close();
   rmSync(storageRoot, { recursive: true, force: true });
@@ -118,6 +146,23 @@ test("http bridge ignores non-message envelopes without dispatching", async () =
   assert.equal(json.ok, true);
   assert.equal(json.result.ignored, true);
   assert.equal(json.dispatchResult, null);
+  bridge.close();
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("http bridge ignores inactive group chatter before activation", async () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-http-bridge-"));
+  const bridge = createOneBotHttpBridge({ storageRoot });
+  const port = await listen(bridge);
+  const response = await fetch(`http://127.0.0.1:${port}/onebot/event`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(makeEnvelope("今天先随便聊聊"))
+  });
+  const json = await response.json();
+  assert.equal(json.ok, true);
+  assert.equal(json.result.ignored, true);
+  assert.equal(json.result.reason, "inactive_group_session");
   bridge.close();
   rmSync(storageRoot, { recursive: true, force: true });
 });

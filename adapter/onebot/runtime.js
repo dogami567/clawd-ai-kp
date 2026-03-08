@@ -1,5 +1,9 @@
 const { stdin, stdout } = require("process");
-const { handleOneBotMessage } = require("./single-session");
+const {
+  handleOneBotMessage,
+  shouldHandleOneBotMessage,
+  getConversationRuntimeState
+} = require("./single-session");
 
 function isOneBotMessageEvent(envelope = {}) {
   return envelope && envelope.post_type === "message";
@@ -56,7 +60,7 @@ function buildOneBotSendAction(envelope = {}, replyText = "") {
   };
 }
 
-function buildIgnoredResult(reason, envelope = {}) {
+function buildIgnoredResult(reason, envelope = {}, extras = {}) {
   return {
     ok: true,
     ignored: true,
@@ -65,6 +69,9 @@ function buildIgnoredResult(reason, envelope = {}) {
     sendAction: null,
     sessionState: null,
     action: null,
+    contextRef: extras.contextRef || null,
+    contextPacket: extras.contextPacket || null,
+    routing: extras.routing || null,
     envelopeType: envelope.post_type || null
   };
 }
@@ -83,6 +90,15 @@ function handleOneBotEnvelope(envelope, options = {}) {
     return buildIgnoredResult("empty_message", envelope);
   }
 
+  const routing = shouldHandleOneBotMessage(normalized, options);
+  if (!routing.handle) {
+    const runtimeState = getConversationRuntimeState(normalized, options);
+    return buildIgnoredResult(routing.reason, envelope, {
+      routing,
+      contextRef: runtimeState.contextRef
+    });
+  }
+
   const result = handleOneBotMessage(normalized, options);
   return {
     ok: result.ok,
@@ -91,7 +107,10 @@ function handleOneBotEnvelope(envelope, options = {}) {
     replyText: result.reply,
     sendAction: result.reply ? buildOneBotSendAction(envelope, result.reply) : null,
     sessionState: result.sessionState,
-    action: result.action || null
+    action: result.action || null,
+    contextRef: result.contextRef || null,
+    contextPacket: result.contextPacket || null,
+    routing
   };
 }
 

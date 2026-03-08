@@ -55,6 +55,38 @@ test("ignores self messages", () => {
   assert.equal(result.reason, "self_message");
 });
 
+test("ignores unrelated group messages before kp session is active", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-runtime-"));
+  const result = handleOneBotEnvelope(makeEnvelope("今天天气不错"), { storageRoot });
+  assert.equal(result.ok, true);
+  assert.equal(result.ignored, true);
+  assert.equal(result.reason, "inactive_group_session");
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("natural activation intent can enter kp flow without command prefix", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-runtime-"));
+  const result = handleOneBotEnvelope(makeEnvelope("我想一次全车完卡，角色选记者"), { storageRoot });
+  assert.equal(result.ok, true);
+  assert.equal(result.ignored, false);
+  assert.equal(result.routing.reason, "activation_intent");
+  assert.match(result.replyText, /传统随机车卡/);
+  assert.equal(typeof result.contextRef, "string");
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("group whitelist blocks non-whitelisted groups", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-runtime-"));
+  const result = handleOneBotEnvelope(makeEnvelope("/aikp roll journalist", { group_id: 12345 }), {
+    storageRoot,
+    groupWhitelist: [95270001]
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.ignored, true);
+  assert.equal(result.reason, "group_not_whitelisted");
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
 test("handles onebot envelope through single-session runtime", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-runtime-"));
   const roll = handleOneBotEnvelope(makeEnvelope("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
@@ -66,5 +98,6 @@ test("handles onebot envelope through single-session runtime", () => {
   assert.equal(turn.sendAction.action, "send_group_msg");
   assert.match(turn.replyText, /Spot Hidden/);
   assert.equal(turn.action.kind, "explore");
+  assert.equal(typeof turn.contextRef, "string");
   rmSync(storageRoot, { recursive: true, force: true });
 });

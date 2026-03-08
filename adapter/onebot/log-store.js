@@ -1,4 +1,4 @@
-const { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } = require("fs");
+const { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } = require("fs");
 const { basename, join } = require("path");
 
 const DEFAULT_SUMMARY_EVENT_THRESHOLD = 12;
@@ -8,8 +8,10 @@ function ensureLogDirs(layout) {
   mkdirSync(layout.logsConversationDir, { recursive: true });
   mkdirSync(layout.chatLogDir, { recursive: true });
   mkdirSync(layout.ledgerLogDir, { recursive: true });
+  mkdirSync(layout.playerLogDir, { recursive: true });
   mkdirSync(layout.stateDir, { recursive: true });
   mkdirSync(layout.summaryDir, { recursive: true });
+  mkdirSync(layout.contextDir, { recursive: true });
 }
 
 function appendJsonLine(filePath, payload) {
@@ -52,6 +54,38 @@ function appendOperationLog(layout, payload) {
 function writeStateSnapshot(layout, payload) {
   ensureLogDirs(layout);
   writeFileSync(layout.stateFile, JSON.stringify(payload, null, 2), "utf8");
+}
+
+function writeContextSnapshot(layout, payload) {
+  ensureLogDirs(layout);
+  writeFileSync(layout.contextFile, JSON.stringify(payload, null, 2), "utf8");
+}
+
+function buildPlayerLogFile(layout, playerKey) {
+  return join(layout.playerLogDir, `${playerKey}.jsonl`);
+}
+
+function appendPlayerOperationLogs(layout, payloads = []) {
+  ensureLogDirs(layout);
+  const grouped = new Map();
+
+  for (const payload of payloads) {
+    const playerKey = payload.userId
+      ? `user-${String(payload.userId)}`
+      : payload.actorId
+        ? `actor-${String(payload.actorId)}`
+        : null;
+    if (!playerKey) continue;
+    if (!grouped.has(playerKey)) grouped.set(playerKey, []);
+    grouped.get(playerKey).push(payload);
+  }
+
+  for (const [playerKey, events] of grouped.entries()) {
+    const filePath = buildPlayerLogFile(layout, playerKey);
+    for (const event of events) {
+      appendJsonLine(filePath, event);
+    }
+  }
 }
 
 function formatChatSummaryLine(event) {
@@ -116,6 +150,113 @@ function buildSummaryMarkdown(chunkIndex, chatEvents, ledgerEvents, stateSnapsho
   return `${lines.join("\n").trim()}\n`;
 }
 
+function readSummaryChunks(layout, limit = 2) {
+  ensureLogDirs(layout);
+  if (!existsSync(layout.summaryDir)) return [];
+  const fileNames = readdirSync(layout.summaryDir)
+    .filter((fileName) => fileName.endsWith(".md"))
+    .sort()
+    .slice(-Math.max(0, limit));
+
+  return fileNames.map((fileName) => ({
+    fileName,
+    text: readFileSync(join(layout.summaryDir, fileName), "utf8")
+  }));
+}
+
+function formatRecentChatLines(chatEvents = []) {
+  return chatEvents.map((event) => formatChatSummaryLine(event));
+}
+
+function formatRecentLedgerLines(ledgerEvents = []) {
+  return ledgerEvents
+    .map((event) => formatLedgerSummaryLine(event))
+    .filter(Boolean);
+}
+
+function buildInjectionText(packet) {
+  const lines = [
+    "[AI-KP Runtime Prompt]",
+    packet.runtimePrompt || "",
+    "",
+    "[Session State]",
+    `- 会话：${packet.conversationKey}`,
+    `- 模式：${packet.sessionMode}`,
+    `- Profile：${packet.runtimeProfileId}`,
+    `- 场景：${packet.state.scene?.summary || "unknown"}`,
+    `- 地点：${packet.state.scene?.location || "unknown"}`,
+    `- 当前聚焦：${packet.state.turnState?.currentActorName || "未指定"}`,
+    `- 轮次：第 ${packet.state.turnState?.round ?? 1} 轮`,
+    `- 明线索：${Array.isArray(packet.state.revealedClues) && packet.state.revealedClues.length ? packet.state.revealedClues.join("、") : "暂无"}`,
+    ""
+  ];
+
+  if (packet.summaryChunks.length) {
+    lines.push("[Summary Chunks]");
+    for (const chunk of packet.summaryChunks) {
+      lines.push(`## ${chunk.fileName}`);
+      lines.push(chunk.text.trim());
+    }
+    lines.push("");
+  }
+
+  if (packet.recentChatLines.length) {
+    lines.push("[Recent Chat]");
+    lines.push(...packet.recentChatLines);
+    lines.push("");
+  }
+
+  if (packet.recentOperationLines.length) {
+    lines.push("[Recent Operations]");
+    lines.push(...packet.recentOperationLines);
+    lines.push("");
+  }
+
+  lines.push("[Raw Log Paths]");
+  lines.push(`- chat: ${packet.logPaths.chat}`);
+  lines.push(`- ledger: ${packet.logPaths.ledger}`);
+  lines.push(`- players: ${packet.logPaths.players}`);
+  lines.push(`- state: ${packet.logPaths.state}`);
+  lines.push(`- summaries: ${packet.logPaths.summaries}`);
+
+  return `${lines.join("\n").trim()}\n`;
+}
+
+function buildContextPacket(layout, meta, stateSnapshot, options = {}) {
+  ensureLogDirs(layout);
+  const recentChat = safeReadJsonLines(layout.chatLogFile).slice(-(Number(options.recentChatLimit || 12)));
+  const recentOperations = safeReadJsonLines(layout.ledgerLogFile).slice(-(Number(options.recentOperationLimit || 12)));
+  const summaryChunks = readSummaryChunks(layout, Number(options.summaryChunkLimit || 2));
+  const packet = {
+    updatedAt: new Date().toISOString(),
+    conversationKey: meta.conversationKey || layout.conversationKey,
+    sessionMode: meta.sessionMode || "idle",
+    runtimeProfileId: meta.runtimeProfileId || "maimai-kp-v1",
+    runtimePrompt: options.runtimePrompt || "",
+    state: {
+      scene: stateSnapshot.scene,
+      turnState: stateSnapshot.turnState,
+      revealedClues: stateSnapshot.revealedClues,
+      investigators: stateSnapshot.investigators
+    },
+    summaryState: stateSnapshot.summaryState || meta.summaryState || {},
+    summaryChunks,
+    recentChat,
+    recentOperations,
+    recentChatLines: formatRecentChatLines(recentChat),
+    recentOperationLines: formatRecentLedgerLines(recentOperations),
+    logPaths: {
+      chat: layout.chatLogFile,
+      ledger: layout.ledgerLogFile,
+      players: layout.playerLogDir,
+      state: layout.stateFile,
+      summaries: layout.summaryDir
+    }
+  };
+  packet.injectionText = buildInjectionText(packet);
+  return packet;
+}
+
 function maybeRollupSummaries(layout, meta, stateSnapshot, options = {}) {
   ensureLogDirs(layout);
   const summaryState = ensureSummaryState(meta);
@@ -154,7 +295,11 @@ module.exports = {
   ensureSummaryState,
   appendChatLog,
   appendOperationLog,
+  appendPlayerOperationLogs,
   writeStateSnapshot,
+  writeContextSnapshot,
+  buildContextPacket,
   maybeRollupSummaries,
+  readSummaryChunks,
   safeReadJsonLines
 };

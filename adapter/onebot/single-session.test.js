@@ -292,19 +292,26 @@ test("writes chat log, operation ledger, state snapshot and summary chunks", () 
   const logsRoot = join(storageRoot, "logs", conversationKey);
   const chatLogFile = join(logsRoot, "chat", "events.jsonl");
   const ledgerLogFile = join(logsRoot, "ledger", "operations.jsonl");
+  const playerLogDir = join(logsRoot, "players");
   const stateFile = join(logsRoot, "state", "latest.json");
+  const contextFile = join(logsRoot, "context", "latest.json");
   const summaryDir = join(logsRoot, "summaries");
 
   const result = handleOneBotMessage(makeEvent("给我快速车卡，职业医生"), {
     storageRoot,
     randomInt: () => 0,
-    summaryEventThreshold: 2
+    summaryEventThreshold: 2,
+    includeContextPacket: true
   });
 
   assert.equal(result.ok, true);
   assert.equal(existsSync(chatLogFile), true);
   assert.equal(existsSync(ledgerLogFile), true);
   assert.equal(existsSync(stateFile), true);
+  assert.equal(existsSync(contextFile), true);
+  assert.equal(existsSync(join(playerLogDir, "user-281894872.jsonl")), true);
+  assert.equal(result.contextRef, contextFile);
+  assert.equal(result.contextPacket.runtimeProfileId, "maimai-kp-v1");
 
   const chatEvents = readJsonLines(chatLogFile);
   assert.equal(chatEvents.length, 2);
@@ -319,6 +326,10 @@ test("writes chat log, operation ledger, state snapshot and summary chunks", () 
   assert.equal(stateSnapshot.sessionMode, "kp");
   assert.equal(stateSnapshot.runtimeProfileId, "maimai-kp-v1");
   assert.match(JSON.stringify(stateSnapshot), /医生/);
+
+  const contextSnapshot = JSON.parse(readFileSync(contextFile, "utf8"));
+  assert.match(contextSnapshot.injectionText, /AI-KP Runtime Prompt/);
+  assert.match(contextSnapshot.injectionText, /给我快速车卡，职业医生/);
 
   const summaryFiles = readdirSync(summaryDir);
   assert.equal(summaryFiles.length, 1);

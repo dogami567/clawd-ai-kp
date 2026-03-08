@@ -29,8 +29,12 @@ const {
   ensureSummaryState,
   appendChatLog,
   appendOperationLog,
+  appendPlayerOperationLogs,
   writeStateSnapshot,
-  maybeRollupSummaries
+  writeContextSnapshot,
+  buildContextPacket,
+  maybeRollupSummaries,
+  safeReadJsonLines
 } = require("./log-store");
 
 const KP_RUNTIME_PROMPT = [
@@ -136,8 +140,7 @@ function buildConversationKey(event = {}) {
   return "onebot-unknown";
 }
 
-function buildStorageLayout(storageRoot, event) {
-  const conversationKey = buildConversationKey(event);
+function buildStorageLayoutFromConversationKey(storageRoot, conversationKey) {
   const root = storageRoot || join(__dirname, "..", "..", "runtime", "onebot");
   const logsConversationDir = join(root, "logs", conversationKey);
   return {
@@ -150,12 +153,19 @@ function buildStorageLayout(storageRoot, event) {
     logsConversationDir,
     chatLogDir: join(logsConversationDir, "chat"),
     ledgerLogDir: join(logsConversationDir, "ledger"),
+    playerLogDir: join(logsConversationDir, "players"),
     stateDir: join(logsConversationDir, "state"),
     summaryDir: join(logsConversationDir, "summaries"),
+    contextDir: join(logsConversationDir, "context"),
     chatLogFile: join(logsConversationDir, "chat", "events.jsonl"),
     ledgerLogFile: join(logsConversationDir, "ledger", "operations.jsonl"),
-    stateFile: join(logsConversationDir, "state", "latest.json")
+    stateFile: join(logsConversationDir, "state", "latest.json"),
+    contextFile: join(logsConversationDir, "context", "latest.json")
   };
+}
+
+function buildStorageLayout(storageRoot, event) {
+  return buildStorageLayoutFromConversationKey(storageRoot, buildConversationKey(event));
 }
 
 function ensureStorageDirs(layout) {
@@ -173,6 +183,42 @@ function saveMeta(layout, meta) {
   ensureStorageDirs(layout);
   writeFileSync(layout.metaFile, JSON.stringify(meta, null, 2), "utf8");
   return meta;
+}
+
+function isAiKpCommand(text = "") {
+  return String(text).trim().startsWith("/aikp");
+}
+
+function normalizeWhitelist(values = []) {
+  return new Set((values || []).map((value) => String(value)));
+}
+
+function isConversationWhitelisted(event, options = {}) {
+  if (!event.group_id) return true;
+  if (!Array.isArray(options.groupWhitelist) || !options.groupWhitelist.length) return true;
+  return normalizeWhitelist(options.groupWhitelist).has(String(event.group_id));
+}
+
+function readConversationMetaSnapshot(event, options = {}) {
+  const layout = buildStorageLayout(options.storageRoot, event);
+  return {
+    layout,
+    meta: loadMeta(layout)
+  };
+}
+
+function getConversationRuntimeState(event, options = {}) {
+  const { layout, meta } = readConversationMetaSnapshot(event, options);
+  return {
+    conversationKey: layout.conversationKey,
+    sessionMode: meta?.sessionMode || "idle",
+    runtimeProfileId: meta?.runtimeProfileId || "maimai-kp-v1",
+    summaryState: cloneJson(meta?.summaryState || {}),
+    knownUsers: cloneJson(meta?.knownUsers || []),
+    contextRef: layout.contextFile,
+    hasContext: existsSync(layout.contextFile),
+    hasSession: existsSync(layout.sessionFile)
+  };
 }
 
 function rememberUser(meta, event) {
@@ -1099,7 +1145,9 @@ function flushConversationArtifacts(event, stateBundle, response, options = {}) 
   if (!stateBundle) {
     return {
       ...response,
-      sessionState: response.sessionState ?? null
+      sessionState: response.sessionState ?? null,
+      contextRef: response.contextRef || null,
+      contextPacket: response.contextPacket || null
     };
   }
 
@@ -1111,26 +1159,34 @@ function flushConversationArtifacts(event, stateBundle, response, options = {}) 
   for (const operationEvent of operationEvents) {
     appendOperationLog(stateBundle.layout, operationEvent);
   }
+  appendPlayerOperationLogs(stateBundle.layout, operationEvents);
 
   let stateSnapshot = buildStateSnapshot(stateBundle);
   const summaryChunk = maybeRollupSummaries(stateBundle.layout, stateBundle.meta, stateSnapshot, options.summaryOptions || {});
   if (summaryChunk) {
-    appendOperationLog(
-      stateBundle.layout,
-      buildOperationEvent("summary.rollup", `生成摘要块 ${summaryChunk.chunkName}`, {
-        chunkName: summaryChunk.chunkName,
-        pendingChatCount: summaryChunk.pendingChatCount
-      })
-    );
+    const summaryEvent = buildOperationEvent("summary.rollup", `生成摘要块 ${summaryChunk.chunkName}`, {
+      chunkName: summaryChunk.chunkName,
+      pendingChatCount: summaryChunk.pendingChatCount
+    });
+    appendOperationLog(stateBundle.layout, summaryEvent);
     stateSnapshot = buildStateSnapshot(stateBundle);
   }
 
   writeStateSnapshot(stateBundle.layout, stateSnapshot);
+  const contextPacket = buildContextPacket(stateBundle.layout, stateBundle.meta, stateSnapshot, {
+    runtimePrompt: getKpRuntimePrompt(),
+    recentChatLimit: options.contextOptions?.recentChatLimit,
+    recentOperationLimit: options.contextOptions?.recentOperationLimit,
+    summaryChunkLimit: options.contextOptions?.summaryChunkLimit
+  });
+  writeContextSnapshot(stateBundle.layout, contextPacket);
   saveMeta(stateBundle.layout, stateBundle.meta);
 
   return {
     ...response,
-    sessionState: cloneJson(stateBundle.sessionState)
+    sessionState: cloneJson(stateBundle.sessionState),
+    contextRef: stateBundle.layout.contextFile,
+    contextPacket: options.includeContextPacket ? contextPacket : null
   };
 }
 
@@ -1215,6 +1271,103 @@ function detectNaturalIntent(text, actorResult = {}) {
   }
 
   return null;
+}
+
+function shouldHandleOneBotMessage(event, options = {}) {
+  const text = getMessageText(event);
+  const commandLike = isAiKpCommand(text);
+  const isGroupMessage = Boolean(event.group_id);
+  const { layout, meta } = readConversationMetaSnapshot(event, options);
+  const sessionMode = meta?.sessionMode || "idle";
+  const isActive = sessionMode === "kp";
+  const allowDirectMessages = options.allowDirectMessages !== false;
+
+  if (!text) {
+    return {
+      handle: false,
+      reason: "empty_message",
+      conversationKey: layout.conversationKey,
+      sessionMode
+    };
+  }
+
+  if (!isConversationWhitelisted(event, options)) {
+    return {
+      handle: false,
+      reason: "group_not_whitelisted",
+      conversationKey: layout.conversationKey,
+      sessionMode
+    };
+  }
+
+  if (!isGroupMessage && !allowDirectMessages) {
+    return {
+      handle: false,
+      reason: "direct_message_disabled",
+      conversationKey: layout.conversationKey,
+      sessionMode
+    };
+  }
+
+  if (commandLike) {
+    return {
+      handle: true,
+      reason: "command",
+      conversationKey: layout.conversationKey,
+      sessionMode
+    };
+  }
+
+  if (!isGroupMessage) {
+    return {
+      handle: true,
+      reason: "direct_message",
+      conversationKey: layout.conversationKey,
+      sessionMode
+    };
+  }
+
+  if (isActive) {
+    return {
+      handle: true,
+      reason: "active_session",
+      conversationKey: layout.conversationKey,
+      sessionMode
+    };
+  }
+
+  if (options.allowNaturalActivation === false) {
+    return {
+      handle: false,
+      reason: "inactive_group_session",
+      conversationKey: layout.conversationKey,
+      sessionMode
+    };
+  }
+
+  const naturalIntent = detectNaturalIntent(text, {});
+  if (naturalIntent && ["start", "roll", "exit"].includes(naturalIntent.kind)) {
+    return {
+      handle: true,
+      reason: "activation_intent",
+      trigger: naturalIntent.kind,
+      conversationKey: layout.conversationKey,
+      sessionMode
+    };
+  }
+
+  return {
+    handle: false,
+    reason: "inactive_group_session",
+    conversationKey: layout.conversationKey,
+    sessionMode
+  };
+}
+
+function loadConversationContext(conversationKey, options = {}) {
+  const layout = buildStorageLayoutFromConversationKey(options.storageRoot, conversationKey);
+  if (!existsSync(layout.contextFile)) return null;
+  return JSON.parse(readFileSync(layout.contextFile, "utf8"));
 }
 
 function handleNaturalIntent(text, event, stateBundle, actorResult, options = {}) {
@@ -1479,6 +1632,11 @@ function handleOneBotMessage(event, options = {}) {
     summaryEventThreshold: options.summaryEventThreshold,
     summaryCharThreshold: options.summaryCharThreshold
   };
+  const contextOptions = {
+    recentChatLimit: options.contextRecentChatLimit,
+    recentOperationLimit: options.contextRecentOperationLimit,
+    summaryChunkLimit: options.contextSummaryChunkLimit
+  };
   const stateBundle = maybeResetSession(event, options);
   rememberUser(stateBundle.meta, event);
   stateBundle.meta.messageCount += text ? 1 : 0;
@@ -1497,6 +1655,8 @@ function handleOneBotMessage(event, options = {}) {
       ok: true,
       reply: formatStartReply(stateBundle, actorResult)
     }, {
+      includeContextPacket: options.includeContextPacket === true,
+      contextOptions,
       summaryOptions,
       operationEvents: text === "/aikp start"
         ? [buildOperationEvent("session.enter", `${getSenderName(event)} 查看了开场面板`, {
@@ -1513,6 +1673,8 @@ function handleOneBotMessage(event, options = {}) {
       ok: true,
       reply: commandResult.reply
     }, {
+      includeContextPacket: options.includeContextPacket === true,
+      contextOptions,
       summaryOptions,
       operationEvents: commandResult.operationEvents || []
     });
@@ -1524,6 +1686,8 @@ function handleOneBotMessage(event, options = {}) {
       ok: true,
       reply: naturalIntentResult.reply
     }, {
+      includeContextPacket: options.includeContextPacket === true,
+      contextOptions,
       summaryOptions,
       operationEvents: naturalIntentResult.operationEvents || []
     });
@@ -1535,6 +1699,8 @@ function handleOneBotMessage(event, options = {}) {
       reason: "missing_investigator",
       reply: "你还没车卡喔。可以直接说“我想一次全车完卡，角色选记者”，或者“给我快速车卡，职业医生”；要继续用指令也行：`/aikp roll journalist`。"
     }, {
+      includeContextPacket: options.includeContextPacket === true,
+      contextOptions,
       summaryOptions,
       operationEvents: [buildOperationEvent("turn.blocked", `${getSenderName(event)} 想行动，但还没有调查员卡`, {
         userId: event.user_id != null ? String(event.user_id) : null
@@ -1558,6 +1724,8 @@ function handleOneBotMessage(event, options = {}) {
       reply: turn.reply,
       reason: turn.reason
     }, {
+      includeContextPacket: options.includeContextPacket === true,
+      contextOptions,
       summaryOptions,
       operationEvents: [buildOperationEvent("turn.rejected", `${getSenderName(event)} 的行动没有落地：${turn.reason || "unknown"}`, {
         userId: event.user_id != null ? String(event.user_id) : null,
@@ -1589,6 +1757,8 @@ function handleOneBotMessage(event, options = {}) {
     }),
     action: turn.action
   }, {
+    includeContextPacket: options.includeContextPacket === true,
+    contextOptions,
     summaryOptions,
     operationEvents: [
       buildOperationEvent("scene.action", `${investigator?.name || getSenderName(event)} 执行了 ${turn.action?.kind || "unknown"}：${operationSummary}`, {
@@ -1608,9 +1778,14 @@ module.exports = {
   getSenderName,
   getKpRuntimePrompt,
   buildConversationKey,
+  buildStorageLayoutFromConversationKey,
   buildStorageLayout,
   loadMeta,
   saveMeta,
+  isAiKpCommand,
+  shouldHandleOneBotMessage,
+  getConversationRuntimeState,
+  loadConversationContext,
   rememberUser,
   createDefaultInvestigator,
   createRolledInvestigator,

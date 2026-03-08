@@ -1,6 +1,12 @@
 const http = require("http");
+const { existsSync, readFileSync } = require("fs");
 const { URL } = require("url");
 const { handleOneBotEnvelope } = require("./runtime");
+const {
+  buildConversationKey,
+  buildStorageLayout,
+  buildStorageLayoutFromConversationKey
+} = require("./single-session");
 const {
   importSceneMarkdown,
   importCampaignMarkdown,
@@ -88,6 +94,23 @@ function createOneBotHttpBridge(options = {}) {
   const storageRoot = options.storageRoot;
   const apiBaseUrl = options.apiBaseUrl;
 
+  function loadContextPayload(requestUrl) {
+    const conversationKey = requestUrl.searchParams.get("conversationKey");
+    if (!conversationKey) {
+      return { ok: false, error: "missing_conversation_key" };
+    }
+    const layout = buildStorageLayoutFromConversationKey(storageRoot, conversationKey);
+    if (!existsSync(layout.contextFile)) {
+      return { ok: false, error: "context_not_found", conversationKey, contextFile: layout.contextFile };
+    }
+    return {
+      ok: true,
+      conversationKey,
+      contextFile: layout.contextFile,
+      context: JSON.parse(readFileSync(layout.contextFile, "utf8"))
+    };
+  }
+
   const server = http.createServer(async (request, response) => {
     try {
       const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
@@ -96,9 +119,20 @@ function createOneBotHttpBridge(options = {}) {
         return sendJson(response, 200, { ok: true, service: "aikp-onebot-http-bridge" });
       }
 
+      if (request.method === "GET" && url.pathname === "/onebot/session-context") {
+        const payload = loadContextPayload(url);
+        return sendJson(response, payload.ok ? 200 : 404, payload);
+      }
+
       if (request.method === "POST" && url.pathname === eventPath) {
         const envelope = await readRequestJson(request);
-        const result = handleOneBotEnvelope(envelope, { storageRoot });
+        const result = handleOneBotEnvelope(envelope, {
+          storageRoot,
+          includeContextPacket: envelope.includeContextPacket === true,
+          groupWhitelist: Array.isArray(options.groupWhitelist) ? options.groupWhitelist : undefined,
+          allowDirectMessages: options.allowDirectMessages,
+          allowNaturalActivation: options.allowNaturalActivation
+        });
         let dispatchResult = null;
 
         if (autoSendActions && result.sendAction) {
@@ -109,6 +143,30 @@ function createOneBotHttpBridge(options = {}) {
           ok: true,
           result,
           dispatchResult
+        });
+      }
+
+      if (request.method === "POST" && url.pathname === "/onebot/session-context") {
+        const body = await readRequestJson(request);
+        const conversationKey = body.conversationKey
+          || (body.event ? buildConversationKey(body.event) : null);
+        if (!conversationKey) {
+          return sendJson(response, 400, { ok: false, error: "missing_conversation_key" });
+        }
+        const layout = buildStorageLayoutFromConversationKey(storageRoot, conversationKey);
+        if (!existsSync(layout.contextFile)) {
+          return sendJson(response, 404, {
+            ok: false,
+            error: "context_not_found",
+            conversationKey,
+            contextFile: layout.contextFile
+          });
+        }
+        return sendJson(response, 200, {
+          ok: true,
+          conversationKey,
+          contextFile: layout.contextFile,
+          context: JSON.parse(readFileSync(layout.contextFile, "utf8"))
         });
       }
 
@@ -157,7 +215,12 @@ if (require.main === module) {
     healthPath: process.env.AIKP_ONEBOT_HEALTH_PATH || "/health",
     storageRoot: process.env.AIKP_STORAGE_ROOT,
     autoSendActions: process.env.AIKP_ONEBOT_AUTO_SEND === "true",
-    apiBaseUrl: process.env.AIKP_ONEBOT_API_BASE_URL
+    apiBaseUrl: process.env.AIKP_ONEBOT_API_BASE_URL,
+    groupWhitelist: process.env.AIKP_ONEBOT_GROUP_WHITELIST
+      ? process.env.AIKP_ONEBOT_GROUP_WHITELIST.split(",").map((item) => item.trim()).filter(Boolean)
+      : undefined,
+    allowDirectMessages: process.env.AIKP_ONEBOT_ALLOW_DMS !== "false",
+    allowNaturalActivation: process.env.AIKP_ONEBOT_ALLOW_NATURAL_ACTIVATION !== "false"
   }).then((server) => {
     const address = server.address();
     process.stdout.write(`AIKP OneBot HTTP bridge listening on ${typeof address === "object" ? address.port : address}\n`);
