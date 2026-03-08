@@ -352,3 +352,51 @@ test("reset command rebuilds session state", () => {
   assert.match(after.reply, /时间：0 分钟/);
   rmSync(storageRoot, { recursive: true, force: true });
 });
+
+test("start prompts to resume or open a new line when an old save exists", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
+  handleOneBotMessage(makeEvent("先不跑了"), { storageRoot });
+
+  const prompt = handleOneBotMessage(makeEvent("我想跑团"), { storageRoot });
+  assert.equal(prompt.ok, true);
+  assert.match(prompt.reply, /旧档/);
+  assert.match(prompt.reply, /续上/);
+  assert.match(prompt.reply, /新开/);
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("new line archives current run and resume can restore the archived save", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  const conversationKey = buildConversationKey(makeEvent("x"));
+  const archiveRoot = join(storageRoot, "archives", conversationKey);
+
+  handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
+  handleOneBotMessage(makeEvent("先不跑了"), { storageRoot });
+  handleOneBotMessage(makeEvent("我想跑团"), { storageRoot });
+
+  const fresh = handleOneBotMessage(makeEvent("新开"), { storageRoot });
+  assert.equal(fresh.ok, true);
+  assert.match(fresh.reply, /save-/);
+  assert.equal(readdirSync(archiveRoot).length, 1);
+
+  const stateAfterNew = handleOneBotMessage(makeEvent("/aikp state"), { storageRoot });
+  assert.match(stateAfterNew.reply, /时间：0 分钟/);
+
+  const saves = handleOneBotMessage(makeEvent("/aikp saves"), { storageRoot });
+  assert.match(saves.reply, /save-/);
+  const saveId = saves.reply.match(/save-\d{4}-\d+/)?.[0];
+  assert.ok(saveId);
+
+  const resumed = handleOneBotMessage(makeEvent(`/aikp resume ${saveId}`), { storageRoot });
+  assert.equal(resumed.ok, true);
+  assert.match(resumed.reply, /接回来了/);
+
+  const stateAfterResume = handleOneBotMessage(makeEvent("/aikp state"), { storageRoot });
+  assert.match(stateAfterResume.reply, /时间：5 分钟/);
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});

@@ -1,4 +1,4 @@
-const { existsSync, mkdirSync, readFileSync, writeFileSync } = require("fs");
+const { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } = require("fs");
 const { join } = require("path");
 const {
   startSessionApi,
@@ -148,6 +148,7 @@ function buildStorageLayoutFromConversationKey(storageRoot, conversationKey) {
     conversationKey,
     sessionsDir: join(root, "sessions"),
     metaDir: join(root, "meta"),
+    archiveConversationDir: join(root, "archives", conversationKey),
     sessionFile: join(root, "sessions", `${conversationKey}.json`),
     metaFile: join(root, "meta", `${conversationKey}.json`),
     logsConversationDir,
@@ -171,16 +172,30 @@ function buildStorageLayout(storageRoot, event) {
 function ensureStorageDirs(layout) {
   mkdirSync(layout.sessionsDir, { recursive: true });
   mkdirSync(layout.metaDir, { recursive: true });
+  mkdirSync(layout.archiveConversationDir, { recursive: true });
+}
+
+function ensureConversationControlState(meta) {
+  meta.archiveHistory = Array.isArray(meta.archiveHistory) ? meta.archiveHistory : [];
+  meta.pendingResumeChoice = meta.pendingResumeChoice && typeof meta.pendingResumeChoice === "object"
+    ? meta.pendingResumeChoice
+    : null;
+  return meta;
 }
 
 function loadMeta(layout) {
   ensureStorageDirs(layout);
   if (!existsSync(layout.metaFile)) return null;
-  return JSON.parse(readFileSync(layout.metaFile, "utf8"));
+  const meta = JSON.parse(readFileSync(layout.metaFile, "utf8"));
+  ensureConversationControlState(meta);
+  ensureSummaryState(meta);
+  return meta;
 }
 
 function saveMeta(layout, meta) {
   ensureStorageDirs(layout);
+  ensureConversationControlState(meta);
+  ensureSummaryState(meta);
   writeFileSync(layout.metaFile, JSON.stringify(meta, null, 2), "utf8");
   return meta;
 }
@@ -263,6 +278,7 @@ function buildInitialMeta(event, layout, scenarioId) {
       round: 1
     }
   };
+  ensureConversationControlState(meta);
   ensureSummaryState(meta);
   rememberUser(meta, event);
   return meta;
@@ -278,6 +294,7 @@ function ensureConversationSession(event, options = {}) {
   if (meta && existsSync(layout.sessionFile)) {
     sessionState = loadSessionApi(layout.sessionFile);
     ensureSummaryState(meta);
+    ensureConversationControlState(meta);
     if (!meta.sessionMode) meta.sessionMode = "idle";
     if (!meta.runtimeProfileId) meta.runtimeProfileId = "maimai-kp-v1";
     rememberUser(meta, event);
@@ -954,11 +971,14 @@ function formatHelpReply() {
   return [
     "AI-KP 可用指令：",
     "- 平时直接说自然语言也行，例如：我想一次全车完卡，角色选记者",
-    "- /aikp start 重新开场",
+    "- /aikp start 开始跑团；如果有旧档会先问你续上还是新开",
     "- /aikp roll <occupationKey> 单人传统随机车卡",
     "- /aikp quickfire <occupationKey> 单人快速车卡",
     "- /aikp party-roll <occupationKey> 为当前已出现玩家批量传统随机车卡",
     "- /aikp party-quickfire <occupationKey> 为当前已出现玩家批量快速车卡",
+    "- /aikp saves 查看当前线和历史归档",
+    "- /aikp resume [saveId] 恢复当前线或某个归档",
+    "- /aikp new 把当前线归档后新开一条",
     "- /aikp join 确认当前调查员",
     "- /aikp sheet 查看自己的调查员卡",
     "- /aikp state 查看当前场景状态",
@@ -1141,6 +1161,356 @@ function buildStateSnapshot(stateBundle) {
   };
 }
 
+function createArchiveSaveId(meta = {}) {
+  const nextIndex = (Array.isArray(meta.archiveHistory) ? meta.archiveHistory.length : 0) + 1;
+  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "");
+  return `save-${String(nextIndex).padStart(4, "0")}-${stamp}`;
+}
+
+function buildArchiveLayout(layout, saveId) {
+  const dir = join(layout.archiveConversationDir, saveId);
+  return {
+    dir,
+    sessionFile: join(dir, "session.json"),
+    metaFile: join(dir, "meta.json"),
+    logsDir: join(dir, "logs"),
+    manifestFile: join(dir, "manifest.json")
+  };
+}
+
+function hasMeaningfulSessionProgress(layout, meta = {}, sessionState = {}) {
+  if (Object.keys(sessionState.investigators || {}).length) return true;
+  if ((sessionState.scene?.timeState?.timelineMinute || 0) > 0) return true;
+  const ledgerEvents = safeReadJsonLines(layout.ledgerLogFile).filter((event) => event.kind !== "summary.rollup");
+  if (ledgerEvents.length) return true;
+  return Number(meta.messageCount || 0) > 2;
+}
+
+function summarizeConversationSave(stateBundle, overrides = {}) {
+  const snapshot = buildStateSnapshot(stateBundle);
+  return {
+    saveId: overrides.saveId || "current",
+    kind: overrides.kind || "active",
+    source: overrides.source || null,
+    savedAt: overrides.savedAt || stateBundle.meta.updatedAt || snapshot.updatedAt,
+    updatedAt: stateBundle.meta.updatedAt || snapshot.updatedAt,
+    scenarioId: stateBundle.meta.scenarioId || stateBundle.sessionState.scene?.meta?.scenarioId || null,
+    sessionMode: stateBundle.meta.sessionMode || "idle",
+    sceneSummary: snapshot.scene.summary || null,
+    location: snapshot.scene.location || null,
+    currentActorName: snapshot.turnState.currentActorName || null,
+    investigatorCount: snapshot.investigators.length,
+    clueCount: snapshot.revealedClues.length
+  };
+}
+
+function formatSaveRecordLine(record, label = null) {
+  const bits = [
+    label || record.saveId,
+    record.sceneSummary || "未命名场景",
+    record.location ? `地点 ${record.location}` : null,
+    record.currentActorName ? `当前聚焦 ${record.currentActorName}` : null,
+    `玩家 ${record.investigatorCount || 0} 人`,
+    `线索 ${record.clueCount || 0} 条`,
+    `保存 ${record.savedAt || record.updatedAt || "unknown"}`
+  ].filter(Boolean);
+  return `- ${bits.join("｜")}`;
+}
+
+function findArchiveRecord(meta = {}, selector = "") {
+  ensureConversationControlState(meta);
+  const archives = Array.isArray(meta.archiveHistory) ? meta.archiveHistory : [];
+  if (!archives.length) return null;
+  if (!selector) return archives.at(-1) || null;
+
+  const normalized = String(selector).trim().toLowerCase();
+  if (!normalized) return archives.at(-1) || null;
+
+  const exact = archives.find((item) => String(item.saveId || "").toLowerCase() === normalized);
+  if (exact) return exact;
+
+  const partialMatches = archives.filter((item) => String(item.saveId || "").toLowerCase().includes(normalized));
+  if (partialMatches.length === 1) return partialMatches[0];
+  return null;
+}
+
+function archiveConversationState(stateBundle, source = "manual") {
+  ensureConversationControlState(stateBundle.meta);
+  if (!hasMeaningfulSessionProgress(stateBundle.layout, stateBundle.meta, stateBundle.sessionState)) {
+    return null;
+  }
+
+  const saveId = createArchiveSaveId(stateBundle.meta);
+  const archiveLayout = buildArchiveLayout(stateBundle.layout, saveId);
+  mkdirSync(archiveLayout.dir, { recursive: true });
+
+  if (existsSync(stateBundle.layout.sessionFile)) {
+    cpSync(stateBundle.layout.sessionFile, archiveLayout.sessionFile);
+  }
+  if (existsSync(stateBundle.layout.metaFile)) {
+    cpSync(stateBundle.layout.metaFile, archiveLayout.metaFile);
+  }
+  if (existsSync(stateBundle.layout.logsConversationDir)) {
+    cpSync(stateBundle.layout.logsConversationDir, archiveLayout.logsDir, { recursive: true });
+  }
+
+  const record = summarizeConversationSave(stateBundle, {
+    saveId,
+    kind: "archive",
+    source,
+    savedAt: new Date().toISOString()
+  });
+  writeFileSync(archiveLayout.manifestFile, JSON.stringify(record, null, 2), "utf8");
+
+  stateBundle.meta.archiveHistory.push(record);
+  stateBundle.meta.updatedAt = new Date().toISOString();
+  stateBundle.meta.pendingResumeChoice = null;
+  saveMeta(stateBundle.layout, stateBundle.meta);
+  return record;
+}
+
+function preserveConversationControls(meta = {}) {
+  ensureConversationControlState(meta);
+  return {
+    archiveHistory: cloneJson(meta.archiveHistory || []),
+    runtimeProfileId: meta.runtimeProfileId || "maimai-kp-v1"
+  };
+}
+
+function applyPreservedConversationControls(meta = {}, preserved = {}) {
+  ensureConversationControlState(meta);
+  meta.archiveHistory = cloneJson(preserved.archiveHistory || []);
+  meta.runtimeProfileId = preserved.runtimeProfileId || meta.runtimeProfileId || "maimai-kp-v1";
+  meta.pendingResumeChoice = null;
+  return meta;
+}
+
+function clearActiveConversationArtifacts(layout) {
+  rmSync(layout.logsConversationDir, { recursive: true, force: true });
+}
+
+function startFreshConversationLine(event, stateBundle, options = {}) {
+  const preserved = preserveConversationControls(stateBundle.meta);
+  clearActiveConversationArtifacts(stateBundle.layout);
+  const fresh = rebuildConversationSession(event, {
+    storageRoot: stateBundle.layout.root,
+    scenarioId: stateBundle.meta.scenarioId,
+    campaignId: stateBundle.meta.campaignId,
+    reset: true
+  });
+  applyPreservedConversationControls(fresh.meta, preserved);
+  saveMeta(fresh.layout, fresh.meta);
+  setSessionMode(fresh, "kp");
+  const actor = ensureActorForUser(event, fresh, {
+    autoCreateInvestigator: false
+  });
+  return { stateBundle: fresh, actor };
+}
+
+function restoreArchivedConversation(event, stateBundle, selector, options = {}) {
+  const selected = findArchiveRecord(stateBundle.meta, selector);
+  if (!selected) {
+    return {
+      ok: false,
+      reason: "archive_not_found",
+      reply: selector
+        ? "我没找到这个存档。先发 `/aikp saves` 看一下可用 saveId。"
+        : "现在还没有可恢复的存档。"
+    };
+  }
+
+  if (hasMeaningfulSessionProgress(stateBundle.layout, stateBundle.meta, stateBundle.sessionState)) {
+    archiveConversationState(stateBundle, "resume-swap");
+  }
+
+  const latestMeta = loadMeta(stateBundle.layout) || stateBundle.meta;
+  const preserved = preserveConversationControls(latestMeta);
+  const archiveLayout = buildArchiveLayout(stateBundle.layout, selected.saveId);
+
+  if (!existsSync(archiveLayout.sessionFile) || !existsSync(archiveLayout.metaFile)) {
+    return {
+      ok: false,
+      reason: "archive_files_missing",
+      reply: "这个存档条目还在，但底层文件已经不见了。你先 `/aikp saves` 看一下别的档吧。"
+    };
+  }
+
+  clearActiveConversationArtifacts(stateBundle.layout);
+  cpSync(archiveLayout.sessionFile, stateBundle.layout.sessionFile);
+  cpSync(archiveLayout.metaFile, stateBundle.layout.metaFile);
+  if (existsSync(archiveLayout.logsDir)) {
+    cpSync(archiveLayout.logsDir, stateBundle.layout.logsConversationDir, { recursive: true });
+  }
+
+  const restoredMeta = loadMeta(stateBundle.layout) || {};
+  applyPreservedConversationControls(restoredMeta, preserved);
+  saveMeta(stateBundle.layout, restoredMeta);
+  const restoredSession = loadSessionApi(stateBundle.layout.sessionFile);
+  const restoredBundle = {
+    layout: stateBundle.layout,
+    meta: restoredMeta,
+    sessionState: restoredSession,
+    created: false
+  };
+  setSessionMode(restoredBundle, "kp");
+  const actor = ensureActorForUser(event, restoredBundle, {
+    autoCreateInvestigator: false
+  });
+  return {
+    ok: true,
+    record: selected,
+    stateBundle: restoredBundle,
+    actor
+  };
+}
+
+function getResumeCandidate(stateBundle) {
+  if (hasMeaningfulSessionProgress(stateBundle.layout, stateBundle.meta, stateBundle.sessionState)) {
+    return {
+      source: "active",
+      record: summarizeConversationSave(stateBundle, {
+        saveId: "current",
+        kind: "active",
+        source: "current"
+      })
+    };
+  }
+
+  const latestArchive = findArchiveRecord(stateBundle.meta);
+  if (latestArchive) {
+    return {
+      source: "archive",
+      record: latestArchive
+    };
+  }
+
+  return null;
+}
+
+function formatResumeChoicePrompt(candidate) {
+  return [
+    "我这边看到这个群已经有旧档了：",
+    formatSaveRecordLine(candidate.record, candidate.source === "active" ? "current" : candidate.record.saveId),
+    "你要 `续上` 这条，还是 `新开` 一条？",
+    "想看历史存档可以发 `/aikp saves`。"
+  ].join("\n");
+}
+
+function formatSaveListReply(stateBundle) {
+  const lines = ["当前可用存档："];
+  if (hasMeaningfulSessionProgress(stateBundle.layout, stateBundle.meta, stateBundle.sessionState)) {
+    lines.push(formatSaveRecordLine(summarizeConversationSave(stateBundle), "current"));
+  }
+
+  const archives = [...(stateBundle.meta.archiveHistory || [])].reverse();
+  if (!archives.length) {
+    lines.push("- 还没有归档存档。");
+    return lines.join("\n");
+  }
+
+  for (const archive of archives) {
+    lines.push(formatSaveRecordLine(archive));
+  }
+  return lines.join("\n");
+}
+
+function detectResumeChoice(text = "") {
+  const normalized = normalizeIntentText(text);
+  if (!normalized) return null;
+  if (includesAny(normalized, ["续上", "继续上次", "接着上次", "恢复这个档", "继续这条", "resume"])) {
+    return "resume";
+  }
+  if (includesAny(normalized, ["新开", "开新线", "新开一条", "另开一条", "重开一条", "new"])) {
+    return "new";
+  }
+  if (includesAny(normalized, ["存档列表", "看看存档", "看存档", "列出存档", "存档"])) {
+    return "list";
+  }
+  return null;
+}
+
+function maybePromptForExistingSave(event, stateBundle) {
+  const candidate = getResumeCandidate(stateBundle);
+  if (!candidate) return null;
+  stateBundle.meta.pendingResumeChoice = {
+    askedAt: new Date().toISOString(),
+    source: candidate.source,
+    saveId: candidate.record.saveId
+  };
+  stateBundle.meta.updatedAt = new Date().toISOString();
+  saveMeta(stateBundle.layout, stateBundle.meta);
+  return {
+    reply: formatResumeChoicePrompt(candidate),
+    operationEvents: [buildOperationEvent("session.resume_prompt", `${getSenderName(event)} 触发了旧档续团确认`, {
+      userId: event.user_id != null ? String(event.user_id) : null,
+      source: candidate.source,
+      saveId: candidate.record.saveId
+    })]
+  };
+}
+
+function handlePendingResumeChoice(text, event, stateBundle) {
+  const pending = stateBundle.meta.pendingResumeChoice;
+  if (!pending) return null;
+
+  const choice = detectResumeChoice(text);
+  if (choice === "list") {
+    return { reply: formatSaveListReply(stateBundle) };
+  }
+
+  if (choice === "resume") {
+    stateBundle.meta.pendingResumeChoice = null;
+    saveMeta(stateBundle.layout, stateBundle.meta);
+    if (pending.source === "archive" && pending.saveId && pending.saveId !== "current") {
+      const restored = restoreArchivedConversation(event, stateBundle, pending.saveId);
+      if (!restored.ok) return { reply: restored.reply };
+      return {
+        reply: `好，我把旧档 ${pending.saveId} 接回来了。\n${formatStartReply(restored.stateBundle, restored.actor)}`,
+        stateBundle: restored.stateBundle,
+        operationEvents: [buildOperationEvent("session.resume", `${getSenderName(event)} 恢复了存档 ${pending.saveId}`, {
+          userId: event.user_id != null ? String(event.user_id) : null,
+          saveId: pending.saveId
+        })]
+      };
+    }
+
+    setSessionMode(stateBundle, "kp");
+    return {
+      reply: `好，那我们就沿着这条继续。\n${formatStartReply(stateBundle, ensureActorForUser(event, stateBundle, { autoCreateInvestigator: false }))}`,
+      operationEvents: [buildOperationEvent("session.resume", `${getSenderName(event)} 继续了当前存档`, {
+        userId: event.user_id != null ? String(event.user_id) : null,
+        saveId: pending.saveId || "current"
+      })]
+    };
+  }
+
+  if (choice === "new") {
+    stateBundle.meta.pendingResumeChoice = null;
+    saveMeta(stateBundle.layout, stateBundle.meta);
+    const archived = archiveConversationState(stateBundle, "new-line");
+    const fresh = startFreshConversationLine(event, stateBundle);
+    const archiveLine = archived
+      ? `旧档我先收成 ${archived.saveId} 了。`
+      : "这边没有需要打包的旧档，我直接给你开了新线。";
+    return {
+      reply: `${archiveLine}\n${formatStartReply(fresh.stateBundle, fresh.actor)}`,
+      stateBundle: fresh.stateBundle,
+      operationEvents: [buildOperationEvent("session.new", `${getSenderName(event)} 新开了一条跑团线`, {
+        userId: event.user_id != null ? String(event.user_id) : null,
+        archivedSaveId: archived?.saveId || null
+      })]
+    };
+  }
+
+  return {
+    reply: [
+      "我这边先等你拍板喔。",
+      "回复 `续上` 我就接回旧档；回复 `新开` 我就另起一条。",
+      "想看历史存档可以发 `/aikp saves`。"
+    ].join("\n")
+  };
+}
+
 function flushConversationArtifacts(event, stateBundle, response, options = {}) {
   if (!stateBundle) {
     return {
@@ -1238,6 +1608,14 @@ function detectNaturalIntent(text, actorResult = {}) {
     return { kind: "exit" };
   }
 
+  if (includesAny(normalized, ["续上", "继续上次", "接着上次", "恢复跑团", "继续这条"])) {
+    return { kind: "resume" };
+  }
+
+  if (includesAny(normalized, ["开新线", "新开一条", "另开一条", "重开一条", "新开"])) {
+    return { kind: "new" };
+  }
+
   if (includesAny(normalized, ["看看状态", "现在什么情况", "当前状态", "场景状态"])) {
     return { kind: "state" };
   }
@@ -1327,6 +1705,15 @@ function shouldHandleOneBotMessage(event, options = {}) {
     };
   }
 
+  if (meta?.pendingResumeChoice) {
+    return {
+      handle: true,
+      reason: "pending_resume_choice",
+      conversationKey: layout.conversationKey,
+      sessionMode
+    };
+  }
+
   if (isActive) {
     return {
       handle: true,
@@ -1346,7 +1733,7 @@ function shouldHandleOneBotMessage(event, options = {}) {
   }
 
   const naturalIntent = detectNaturalIntent(text, {});
-  if (naturalIntent && ["start", "roll", "exit"].includes(naturalIntent.kind)) {
+  if (naturalIntent && ["start", "roll", "exit", "resume", "new"].includes(naturalIntent.kind)) {
     return {
       handle: true,
       reason: "activation_intent",
@@ -1397,7 +1784,59 @@ function handleNaturalIntent(text, event, stateBundle, actorResult, options = {}
     return { reply: formatPartySummary(stateBundle) };
   }
 
+  if (naturalIntent.kind === "resume") {
+    const resumeCandidate = getResumeCandidate(stateBundle);
+    if (!resumeCandidate) {
+      setSessionMode(stateBundle, "kp");
+      return {
+        reply: formatStartReply(stateBundle, actorResult),
+        operationEvents: [buildOperationEvent("session.enter", `${getSenderName(event)} 进入了本群 AI-KP`, {
+          userId: event.user_id != null ? String(event.user_id) : null
+        })]
+      };
+    }
+
+    if (resumeCandidate.source === "archive") {
+      const restored = restoreArchivedConversation(event, stateBundle, resumeCandidate.record.saveId);
+      if (!restored.ok) {
+        return { reply: restored.reply };
+      }
+      return {
+        reply: `好，我把旧档 ${resumeCandidate.record.saveId} 接回来了。\n${formatStartReply(restored.stateBundle, restored.actor)}`,
+        stateBundle: restored.stateBundle,
+        operationEvents: [buildOperationEvent("session.resume", `${getSenderName(event)} 恢复了存档 ${resumeCandidate.record.saveId}`, {
+          userId: event.user_id != null ? String(event.user_id) : null,
+          saveId: resumeCandidate.record.saveId
+        })]
+      };
+    }
+
+    setSessionMode(stateBundle, "kp");
+    return {
+      reply: `好，那我们就沿着这条继续。\n${formatStartReply(stateBundle, actorResult)}`,
+      operationEvents: [buildOperationEvent("session.resume", `${getSenderName(event)} 继续了当前存档`, {
+        userId: event.user_id != null ? String(event.user_id) : null,
+        saveId: resumeCandidate.record.saveId
+      })]
+    };
+  }
+
+  if (naturalIntent.kind === "new") {
+    const archived = archiveConversationState(stateBundle, "natural-new-line");
+    const fresh = startFreshConversationLine(event, stateBundle);
+    return {
+      reply: `${archived ? `旧档我先收成 ${archived.saveId} 了。` : "这边没有旧档要打包，我直接给你起新线。"}\n${formatStartReply(fresh.stateBundle, fresh.actor)}`,
+      stateBundle: fresh.stateBundle,
+      operationEvents: [buildOperationEvent("session.new", `${getSenderName(event)} 自然语言新开了一条跑团线`, {
+        userId: event.user_id != null ? String(event.user_id) : null,
+        archivedSaveId: archived?.saveId || null
+      })]
+    };
+  }
+
   if (naturalIntent.kind === "start") {
+    const prompt = maybePromptForExistingSave(event, stateBundle);
+    if (prompt) return prompt;
     setSessionMode(stateBundle, "kp");
     return {
       reply: formatStartReply(stateBundle, actorResult),
@@ -1441,6 +1880,62 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
 
   if (text.trim() === "/aikp help") {
     return { reply: formatHelpReply() };
+  }
+
+  if (text.trim() === "/aikp start") {
+    const prompt = maybePromptForExistingSave(event, stateBundle);
+    if (prompt) return prompt;
+    setSessionMode(stateBundle, "kp");
+    return {
+      reply: formatStartReply(stateBundle, actorResult),
+      operationEvents: [buildOperationEvent("session.enter", `${getSenderName(event)} 查看了开场面板`, {
+        userId: event.user_id != null ? String(event.user_id) : null
+      })]
+    };
+  }
+
+  if (text.trim() === "/aikp saves") {
+    return { reply: formatSaveListReply(stateBundle) };
+  }
+
+  if (text.trim() === "/aikp new") {
+    const archived = archiveConversationState(stateBundle, "command-new-line");
+    const fresh = startFreshConversationLine(event, stateBundle);
+    return {
+      reply: `${archived ? `旧档我先收成 ${archived.saveId} 了。` : "这边没有旧档要打包，我直接给你起新线。"}\n${formatStartReply(fresh.stateBundle, fresh.actor)}`,
+      stateBundle: fresh.stateBundle,
+      operationEvents: [buildOperationEvent("session.new", `${getSenderName(event)} 手动新开了一条跑团线`, {
+        userId: event.user_id != null ? String(event.user_id) : null,
+        archivedSaveId: archived?.saveId || null
+      })]
+    };
+  }
+
+  if (command === "/aikp" && args[0] === "resume") {
+    const selector = args[1] || "";
+    if (!selector && hasMeaningfulSessionProgress(stateBundle.layout, stateBundle.meta, stateBundle.sessionState)) {
+      setSessionMode(stateBundle, "kp");
+      return {
+        reply: `好，这条我给你接上。\n${formatStartReply(stateBundle, actorResult)}`,
+        operationEvents: [buildOperationEvent("session.resume", `${getSenderName(event)} 恢复了当前存档`, {
+          userId: event.user_id != null ? String(event.user_id) : null,
+          saveId: "current"
+        })]
+      };
+    }
+
+    const restored = restoreArchivedConversation(event, stateBundle, selector);
+    if (!restored.ok) {
+      return { reply: restored.reply };
+    }
+    return {
+      reply: `好，我把旧档 ${restored.record.saveId} 接回来了。\n${formatStartReply(restored.stateBundle, restored.actor)}`,
+      stateBundle: restored.stateBundle,
+      operationEvents: [buildOperationEvent("session.resume", `${getSenderName(event)} 恢复了存档 ${restored.record.saveId}`, {
+        userId: event.user_id != null ? String(event.user_id) : null,
+        saveId: restored.record.saveId
+      })]
+    };
   }
 
   if (text.trim() === "/aikp state") {
@@ -1647,10 +2142,23 @@ function handleOneBotMessage(event, options = {}) {
   }
   const actorResult = ensureActorForUser(event, stateBundle, { ...options, autoCreateInvestigator: false });
 
-  if (!text || text === "/aikp start") {
-    if (text === "/aikp start") {
-      setSessionMode(stateBundle, "kp");
+  if (stateBundle.meta.pendingResumeChoice && text && !isAiKpCommand(text)) {
+    const pendingResult = handlePendingResumeChoice(text, event, stateBundle);
+    if (pendingResult) {
+      const currentBundle = pendingResult.stateBundle || stateBundle;
+      return flushConversationArtifacts(event, currentBundle, {
+        ok: true,
+        reply: pendingResult.reply
+      }, {
+        includeContextPacket: options.includeContextPacket === true,
+        contextOptions,
+        summaryOptions,
+        operationEvents: pendingResult.operationEvents || []
+      });
     }
+  }
+
+  if (!text) {
     return flushConversationArtifacts(event, stateBundle, {
       ok: true,
       reply: formatStartReply(stateBundle, actorResult)
@@ -1658,11 +2166,7 @@ function handleOneBotMessage(event, options = {}) {
       includeContextPacket: options.includeContextPacket === true,
       contextOptions,
       summaryOptions,
-      operationEvents: text === "/aikp start"
-        ? [buildOperationEvent("session.enter", `${getSenderName(event)} 查看了开场面板`, {
-          userId: event.user_id != null ? String(event.user_id) : null
-        })]
-        : []
+      operationEvents: []
     });
   }
 

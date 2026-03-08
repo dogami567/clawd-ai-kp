@@ -101,3 +101,24 @@ test("handles onebot envelope through single-session runtime", () => {
   assert.equal(typeof turn.contextRef, "string");
   rmSync(storageRoot, { recursive: true, force: true });
 });
+
+test("pending resume choice keeps follow-up group reply inside ai-kp runtime", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-runtime-"));
+
+  handleOneBotEnvelope(makeEnvelope("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  handleOneBotEnvelope(makeEnvelope("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
+  handleOneBotEnvelope(makeEnvelope("先不跑了"), { storageRoot });
+
+  const prompt = handleOneBotEnvelope(makeEnvelope("我想跑团"), { storageRoot });
+  assert.equal(prompt.ok, true);
+  assert.equal(prompt.ignored, false);
+  assert.match(prompt.replyText, /续上/);
+  assert.match(prompt.replyText, /新开/);
+
+  const resume = handleOneBotEnvelope(makeEnvelope("续上"), { storageRoot });
+  assert.equal(resume.ok, true);
+  assert.equal(resume.ignored, false);
+  assert.match(resume.replyText, /沿着这条继续|接回来了/);
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});
