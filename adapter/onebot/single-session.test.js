@@ -90,6 +90,18 @@ test("story pack selection switches session into prestart lobby without dumping 
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
+test("first chargen after story pack selection auto-attaches the formal opening", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  handleOneBotMessage(makeEvent("我想跑团"), { storageRoot });
+  handleOneBotMessage(makeEvent("1"), { storageRoot });
+  const result = handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  assert.equal(result.ok, true);
+  assert.match(result.reply, /传统随机车卡/);
+  assert.match(result.reply, /当前绑定调查员：dogami/);
+  assert.match(result.reply, /门一推开/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
 test("natural language can quickfire chargen with chinese occupation", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   const result = handleOneBotMessage(makeEvent("给我快速车卡，职业医生"), { storageRoot, randomInt: () => 0 });

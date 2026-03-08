@@ -17,12 +17,39 @@ function stripCqTags(text = "") {
     .trim();
 }
 
+function extractAtMentions(text = "") {
+  return [...String(text).matchAll(/\[CQ:at,[^\]]*qq=(\d+)[^\]]*\]/g)].map((match) => match[1]);
+}
+
+function isAddressedToBot(envelope = {}, options = {}) {
+  if (envelope.message_type !== "group") return true;
+  if (options.requireGroupMention === false) return true;
+
+  const mentions = extractAtMentions(envelope.raw_message ?? envelope.message ?? "");
+  if (!mentions.length) return false;
+
+  const candidateIds = [
+    envelope.self_id,
+    options.onebotSelfId,
+    ...(Array.isArray(options.onebotSelfIds) ? options.onebotSelfIds : [])
+  ]
+    .filter((value) => value != null)
+    .map((value) => String(value));
+
+  if (!candidateIds.length) {
+    return true;
+  }
+
+  const idSet = new Set(candidateIds);
+  return mentions.some((mention) => idSet.has(String(mention)));
+}
+
 function isSelfMessage(envelope = {}) {
   const senderId = envelope.user_id ?? envelope.sender?.user_id;
   return senderId != null && envelope.self_id != null && String(senderId) === String(envelope.self_id);
 }
 
-function normalizeOneBotEvent(envelope = {}) {
+function normalizeOneBotEvent(envelope = {}, options = {}) {
   if (!isOneBotMessageEvent(envelope)) {
     return null;
   }
@@ -36,7 +63,8 @@ function normalizeOneBotEvent(envelope = {}) {
     sender: envelope.sender || {},
     message_id: envelope.message_id,
     self_id: envelope.self_id,
-    message_type: envelope.message_type
+    message_type: envelope.message_type,
+    mentionedSelf: isAddressedToBot(envelope, options)
   };
 }
 
@@ -85,7 +113,7 @@ function handleOneBotEnvelope(envelope, options = {}) {
     return buildIgnoredResult("self_message", envelope);
   }
 
-  const normalized = normalizeOneBotEvent(envelope);
+  const normalized = normalizeOneBotEvent(envelope, options);
   if (!normalized || !normalized.message) {
     return buildIgnoredResult("empty_message", envelope);
   }

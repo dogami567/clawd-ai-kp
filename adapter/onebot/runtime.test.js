@@ -10,6 +10,8 @@ const {
   normalizeOneBotEvent
 } = require("./runtime");
 
+const BOT_ID = 114514;
+
 function makeEnvelope(message, overrides = {}) {
   return {
     post_type: "message",
@@ -20,6 +22,10 @@ function makeEnvelope(message, overrides = {}) {
     sender: { nickname: "dogami" },
     ...overrides
   };
+}
+
+function makeAtEnvelope(message, overrides = {}) {
+  return makeEnvelope(`[CQ:at,qq=${BOT_ID}] ${message}`, overrides);
 }
 
 test("builds group send action for group envelope", () => {
@@ -60,13 +66,13 @@ test("ignores unrelated group messages before kp session is active", () => {
   const result = handleOneBotEnvelope(makeEnvelope("今天天气不错"), { storageRoot });
   assert.equal(result.ok, true);
   assert.equal(result.ignored, true);
-  assert.equal(result.reason, "inactive_group_session");
+  assert.equal(result.reason, "not_addressed");
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
 test("natural activation intent can enter kp flow without command prefix", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-runtime-"));
-  const result = handleOneBotEnvelope(makeEnvelope("我想一次全车完卡，角色选记者"), { storageRoot });
+  const result = handleOneBotEnvelope(makeAtEnvelope("我想一次全车完卡，角色选记者"), { storageRoot });
   assert.equal(result.ok, true);
   assert.equal(result.ignored, false);
   assert.equal(result.routing.reason, "activation_intent");
@@ -77,7 +83,7 @@ test("natural activation intent can enter kp flow without command prefix", () =>
 
 test("natural start intent now prompts story pack selection before scene intro", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-runtime-"));
-  const result = handleOneBotEnvelope(makeEnvelope("我想跑团"), { storageRoot });
+  const result = handleOneBotEnvelope(makeAtEnvelope("我想跑团"), { storageRoot });
   assert.equal(result.ok, true);
   assert.equal(result.ignored, false);
   assert.equal(result.routing.reason, "activation_intent");
@@ -88,7 +94,7 @@ test("natural start intent now prompts story pack selection before scene intro",
 
 test("group whitelist blocks non-whitelisted groups", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-runtime-"));
-  const result = handleOneBotEnvelope(makeEnvelope("/aikp roll journalist", { group_id: 12345 }), {
+  const result = handleOneBotEnvelope(makeAtEnvelope("/aikp roll journalist", { group_id: 12345 }), {
     storageRoot,
     groupWhitelist: [95270001]
   });
@@ -98,17 +104,30 @@ test("group whitelist blocks non-whitelisted groups", () => {
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
+test("active group session ignores chatter without bot mention", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-runtime-"));
+  handleOneBotEnvelope(makeAtEnvelope("/aikp pack old-church-arc-pack"), { storageRoot });
+  handleOneBotEnvelope(makeAtEnvelope("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+
+  const result = handleOneBotEnvelope(makeEnvelope("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
+  assert.equal(result.ok, true);
+  assert.equal(result.ignored, true);
+  assert.equal(result.reason, "not_addressed");
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
 test("handles onebot envelope through single-session runtime", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-runtime-"));
-  const roll = handleOneBotEnvelope(makeEnvelope("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  const roll = handleOneBotEnvelope(makeAtEnvelope("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
   assert.equal(roll.ok, true);
   assert.match(roll.replyText, /传统随机车卡/);
 
-  const pack = handleOneBotEnvelope(makeEnvelope("/aikp pack old-church-arc-pack"), { storageRoot });
+  const pack = handleOneBotEnvelope(makeAtEnvelope("/aikp pack old-church-arc-pack"), { storageRoot });
   assert.equal(pack.ok, true);
   assert.match(pack.replyText, /旧教堂异响/);
 
-  const turn = handleOneBotEnvelope(makeEnvelope("[CQ:at,qq=123] 我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
+  const turn = handleOneBotEnvelope(makeAtEnvelope("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   assert.equal(turn.ok, true);
   assert.equal(turn.sendAction.action, "send_group_msg");
   assert.match(turn.replyText, /Spot Hidden/);
@@ -120,17 +139,18 @@ test("handles onebot envelope through single-session runtime", () => {
 test("pending resume choice keeps follow-up group reply inside ai-kp runtime", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-runtime-"));
 
-  handleOneBotEnvelope(makeEnvelope("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
-  handleOneBotEnvelope(makeEnvelope("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
-  handleOneBotEnvelope(makeEnvelope("先不跑了"), { storageRoot });
+  handleOneBotEnvelope(makeAtEnvelope("/aikp pack old-church-arc-pack"), { storageRoot });
+  handleOneBotEnvelope(makeAtEnvelope("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  handleOneBotEnvelope(makeAtEnvelope("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
+  handleOneBotEnvelope(makeAtEnvelope("先不跑了"), { storageRoot });
 
-  const prompt = handleOneBotEnvelope(makeEnvelope("我想跑团"), { storageRoot });
+  const prompt = handleOneBotEnvelope(makeAtEnvelope("我想跑团"), { storageRoot });
   assert.equal(prompt.ok, true);
   assert.equal(prompt.ignored, false);
   assert.match(prompt.replyText, /续上/);
   assert.match(prompt.replyText, /新开/);
 
-  const resume = handleOneBotEnvelope(makeEnvelope("续上"), { storageRoot });
+  const resume = handleOneBotEnvelope(makeAtEnvelope("续上"), { storageRoot });
   assert.equal(resume.ok, true);
   assert.equal(resume.ignored, false);
   assert.match(resume.replyText, /沿着这条继续|接回来了/);

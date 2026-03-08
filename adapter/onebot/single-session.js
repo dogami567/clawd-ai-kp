@@ -264,6 +264,9 @@ function ensureConversationControlState(meta) {
   meta.storyPackId = typeof meta.storyPackId === "string" && meta.storyPackId.trim()
     ? meta.storyPackId.trim()
     : null;
+  meta.sceneIntroDeliveredAt = typeof meta.sceneIntroDeliveredAt === "string" && meta.sceneIntroDeliveredAt.trim()
+    ? meta.sceneIntroDeliveredAt.trim()
+    : null;
   return meta;
 }
 
@@ -350,6 +353,7 @@ function buildInitialMeta(event, layout, scenarioId, options = {}) {
     sessionFile: layout.sessionFile,
     scenarioId,
     storyPackId: options.storyPackId || null,
+    sceneIntroDeliveredAt: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     actorsByUserId: {},
@@ -1059,6 +1063,7 @@ function formatStoryPackChoicePrompt() {
     lines.push(`- ${entry.index}. ${entry.storyPack.title}｜ID ${entry.storyPack.id}｜故事弧 ${entry.campaign.title}｜${(entry.storyPack.sceneIds || []).length} 幕`);
   }
 
+  lines.push("群里继续和我说话时记得带 `@麦麦`。");
   lines.push("回复序号、剧本名，或 `/aikp pack <storyPackId>` 来选择。");
   return lines.join("\n");
 }
@@ -1073,6 +1078,7 @@ function formatAwaitingInvestigatorReply(stateBundle) {
   return [
     `这次先跑《${title}》。`,
     "你现在还没车卡，先把调查员卡定下来，我再给你正式开场。",
+    "群里继续操作时记得带 `@麦麦`。",
     "可以直接说“我想一次全车完卡，角色选记者”或“给我快速车卡，职业医生”。",
     "继续用指令也行：`/aikp roll journalist`、`/aikp quickfire artist`。"
   ].join("\n");
@@ -1085,7 +1091,7 @@ function formatSceneStartReply(stateBundle, actorResult) {
   const packLine = entry?.storyPack?.title ? `这次跑《${formatStoryPackDisplayTitle(entry.storyPack)}》。` : null;
   const joinLine = actorResult?.investigator ? `当前绑定调查员：${actorResult.investigator.name}。` : null;
   const promptLine = prompts.length ? `场景里可以直接试这些：\n- ${prompts.join("\n- ")}` : "你现在可以直接说行动。";
-  const helpLine = "自然语言就行：比如“我想一次全车完卡，角色选记者”“给我快速车卡，职业医生”“我借着手电去看祭坛背后的刮痕”；继续用指令也行：`/aikp roll journalist`、`/aikp quickfire artist`。";
+  const helpLine = "群里继续操作时记得带 `@麦麦`。自然语言就行：比如“我想一次全车完卡，角色选记者”“给我快速车卡，职业医生”“我借着手电去看祭坛背后的刮痕”；继续用指令也行：`/aikp roll journalist`、`/aikp quickfire artist`。";
   return [packLine, joinLine, opening, promptLine, helpLine].filter(Boolean).join("\n");
 }
 
@@ -1096,12 +1102,26 @@ function formatStartReply(stateBundle, actorResult) {
   if (!actorResult?.investigator) {
     return formatAwaitingInvestigatorReply(stateBundle);
   }
+  if (!stateBundle.meta.sceneIntroDeliveredAt) {
+    stateBundle.meta.sceneIntroDeliveredAt = new Date().toISOString();
+  }
   return formatSceneStartReply(stateBundle, actorResult);
+}
+
+function appendSceneStartReplyIfNeeded(stateBundle, actorResult, replyText) {
+  if (!getSelectedStoryPackEntry(stateBundle.meta) || !actorResult?.investigator) {
+    return replyText;
+  }
+  if (stateBundle.meta.sceneIntroDeliveredAt) {
+    return replyText;
+  }
+  return `${replyText}\n\n${formatStartReply(stateBundle, actorResult)}`;
 }
 
 function formatHelpReply() {
   return [
     "AI-KP 可用指令：",
+    "- 群聊里和我继续交互时，统一带 `@麦麦`，避免误吃到旁边人的讨论",
     "- 平时直接说自然语言也行，例如：我想一次全车完卡，角色选记者",
     "- /aikp start 开始跑团；如果有旧档会先问你续上还是新开，没有旧档就先选剧本",
     "- /aikp packs 查看当前可选剧本",
@@ -1556,6 +1576,7 @@ function formatResumeChoicePrompt(candidate) {
     "我这边看到这个群已经有旧档了：",
     formatSaveRecordLine(candidate.record, candidate.source === "active" ? "current" : candidate.record.saveId),
     "你要 `续上` 这条，还是 `新开` 一条？",
+    "群里继续操作时记得带 `@麦麦`。",
     "想看历史存档可以发 `/aikp saves`。"
   ].join("\n");
 }
@@ -1752,6 +1773,7 @@ function handlePendingResumeChoice(text, event, stateBundle) {
   return {
     reply: [
       "我这边先等你拍板喔。",
+      "群里继续操作时记得带 `@麦麦`。",
       "回复 `续上` 我就接回旧档；回复 `新开` 我就另起一条。",
       "想看历史存档可以发 `/aikp saves`。"
     ].join("\n")
@@ -1921,6 +1943,8 @@ function shouldHandleOneBotMessage(event, options = {}) {
   const text = getMessageText(event);
   const commandLike = isAiKpCommand(text);
   const isGroupMessage = Boolean(event.group_id);
+  const requiresMention = isGroupMessage && options.requireGroupMention !== false;
+  const mentionedSelf = event.mentionedSelf !== false;
   const { layout, meta } = readConversationMetaSnapshot(event, options);
   const sessionMode = meta?.sessionMode || "idle";
   const isActive = sessionMode === "kp";
@@ -1939,6 +1963,15 @@ function shouldHandleOneBotMessage(event, options = {}) {
     return {
       handle: false,
       reason: "group_not_whitelisted",
+      conversationKey: layout.conversationKey,
+      sessionMode
+    };
+  }
+
+  if (requiresMention && !mentionedSelf) {
+    return {
+      handle: false,
+      reason: "not_addressed",
       conversationKey: layout.conversationKey,
       sessionMode
     };
@@ -2041,7 +2074,7 @@ function handleNaturalIntent(text, event, stateBundle, actorResult, options = {}
   if (naturalIntent.kind === "exit") {
     setSessionMode(stateBundle, "idle");
     return {
-      reply: "好，这局我先帮你收住啦。之后想继续，直接说“开始跑团”或者“我想车卡”就能再接上。",
+      reply: "好，这局我先帮你收住啦。之后想继续的话，群里记得带 `@麦麦` 再说“开始跑团”或者“我想车卡”，我就能接上。",
       operationEvents: [buildOperationEvent("session.exit", `${getSenderName(event)} 结束了本群 AI-KP 状态`, {
         userId: event.user_id != null ? String(event.user_id) : null
       })]
@@ -2125,15 +2158,17 @@ function handleNaturalIntent(text, event, stateBundle, actorResult, options = {}
     setSessionMode(stateBundle, "kp");
     if (naturalIntent.party) {
       const rollResult = runPartyRollCommand(stateBundle, naturalIntent.mode, naturalIntent.occupationKey, randomInt);
+      const currentActor = ensureActorForUser(event, stateBundle, { autoCreateInvestigator: false });
       return {
-        reply: rollResult.reply,
+        reply: appendSceneStartReplyIfNeeded(stateBundle, currentActor, rollResult.reply),
         operationEvents: buildRollOperationEvents(event, rollResult, true)
       };
     }
 
     const rollResult = runSingleRollCommand(event, stateBundle, naturalIntent.mode, naturalIntent.occupationKey, randomInt);
+    const currentActor = ensureActorForUser(event, stateBundle, { autoCreateInvestigator: false });
     return {
-      reply: rollResult.reply,
+      reply: appendSceneStartReplyIfNeeded(stateBundle, currentActor, rollResult.reply),
       operationEvents: buildRollOperationEvents(event, rollResult, false)
     };
   }
@@ -2336,8 +2371,9 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
     const occupationKey = resolveOccupationKey(args[1], actorResult.investigator?.occupationKey || "journalist");
     setSessionMode(stateBundle, "kp");
     const rollResult = runSingleRollCommand(event, stateBundle, "traditional", occupationKey, randomInt);
+    const currentActor = ensureActorForUser(event, stateBundle, { autoCreateInvestigator: false });
     return {
-      reply: rollResult.reply,
+      reply: appendSceneStartReplyIfNeeded(stateBundle, currentActor, rollResult.reply),
       operationEvents: buildRollOperationEvents(event, rollResult, false)
     };
   }
@@ -2346,8 +2382,9 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
     const occupationKey = resolveOccupationKey(args[1], actorResult.investigator?.occupationKey || "journalist");
     setSessionMode(stateBundle, "kp");
     const rollResult = runSingleRollCommand(event, stateBundle, "quickfire", occupationKey, randomInt);
+    const currentActor = ensureActorForUser(event, stateBundle, { autoCreateInvestigator: false });
     return {
-      reply: rollResult.reply,
+      reply: appendSceneStartReplyIfNeeded(stateBundle, currentActor, rollResult.reply),
       operationEvents: buildRollOperationEvents(event, rollResult, false)
     };
   }
@@ -2356,8 +2393,9 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
     const occupationKey = args[1] ? resolveOccupationKey(args[1], "journalist") : null;
     setSessionMode(stateBundle, "kp");
     const rollResult = runPartyRollCommand(stateBundle, "traditional", occupationKey, randomInt);
+    const currentActor = ensureActorForUser(event, stateBundle, { autoCreateInvestigator: false });
     return {
-      reply: rollResult.reply,
+      reply: appendSceneStartReplyIfNeeded(stateBundle, currentActor, rollResult.reply),
       operationEvents: buildRollOperationEvents(event, rollResult, true)
     };
   }
@@ -2366,8 +2404,9 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
     const occupationKey = args[1] ? resolveOccupationKey(args[1], "journalist") : null;
     setSessionMode(stateBundle, "kp");
     const rollResult = runPartyRollCommand(stateBundle, "quickfire", occupationKey, randomInt);
+    const currentActor = ensureActorForUser(event, stateBundle, { autoCreateInvestigator: false });
     return {
-      reply: rollResult.reply,
+      reply: appendSceneStartReplyIfNeeded(stateBundle, currentActor, rollResult.reply),
       operationEvents: buildRollOperationEvents(event, rollResult, true)
     };
   }

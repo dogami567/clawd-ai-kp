@@ -6,6 +6,8 @@ const { join } = require("path");
 const { tmpdir } = require("os");
 const { createOneBotHttpBridge } = require("./http-bridge");
 
+const BOT_ID = 114514;
+
 function makeEnvelope(message, overrides = {}) {
   return {
     post_type: "message",
@@ -16,6 +18,10 @@ function makeEnvelope(message, overrides = {}) {
     sender: { nickname: "dogami" },
     ...overrides
   };
+}
+
+function makeAtEnvelope(message, overrides = {}) {
+  return makeEnvelope(`[CQ:at,qq=${BOT_ID}] ${message}`, overrides);
 }
 
 async function listen(server) {
@@ -57,19 +63,19 @@ test("http bridge returns onebot send action from event", async () => {
     await fetch(`http://127.0.0.1:${port}/onebot/event`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(makeEnvelope("/aikp pack old-church-arc-pack"))
+      body: JSON.stringify(makeAtEnvelope("/aikp pack old-church-arc-pack"))
     });
 
     await fetch(`http://127.0.0.1:${port}/onebot/event`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(makeEnvelope("/aikp roll journalist"))
+      body: JSON.stringify(makeAtEnvelope("/aikp roll journalist"))
     });
 
     const response = await fetch(`http://127.0.0.1:${port}/onebot/event`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(makeEnvelope("我借着手电去看祭坛背后的刮痕"))
+      body: JSON.stringify(makeAtEnvelope("我借着手电去看祭坛背后的刮痕"))
     });
     const json = await response.json();
 
@@ -94,7 +100,7 @@ test("http bridge exposes stored session context", async () => {
     const rollResponse = await fetch(`http://127.0.0.1:${port}/onebot/event`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...makeEnvelope("给我快速车卡，职业医生"), includeContextPacket: true })
+      body: JSON.stringify({ ...makeAtEnvelope("给我快速车卡，职业医生"), includeContextPacket: true })
     });
     const rollJson = await rollResponse.json();
     const contextResponse = await fetch(`http://127.0.0.1:${port}/onebot/session-context?conversationKey=onebot-group-95270001`);
@@ -139,19 +145,19 @@ test("http bridge can auto-dispatch action to onebot api", async () => {
     await fetch(`http://127.0.0.1:${bridgePort}/onebot/event`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(makeEnvelope("/aikp pack old-church-arc-pack"))
+      body: JSON.stringify(makeAtEnvelope("/aikp pack old-church-arc-pack"))
     });
 
     await fetch(`http://127.0.0.1:${bridgePort}/onebot/event`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(makeEnvelope("/aikp roll journalist"))
+      body: JSON.stringify(makeAtEnvelope("/aikp roll journalist"))
     });
 
     const response = await fetch(`http://127.0.0.1:${bridgePort}/onebot/event`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(makeEnvelope("我借着手电去看祭坛背后的刮痕"))
+      body: JSON.stringify(makeAtEnvelope("我借着手电去看祭坛背后的刮痕"))
     });
     const json = await response.json();
 
@@ -199,7 +205,7 @@ test("http bridge ignores inactive group chatter before activation", async () =>
     const json = await response.json();
     assert.equal(json.ok, true);
     assert.equal(json.result.ignored, true);
-    assert.equal(json.result.reason, "inactive_group_session");
+    assert.equal(json.result.reason, "not_addressed");
   } finally {
     await closeServer(bridge);
     rmSync(storageRoot, { recursive: true, force: true });

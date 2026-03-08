@@ -90,6 +90,7 @@ test("runtime-level full session simulation covers a realistic multiplayer ai-kp
   assert.match(partyRoll.replyText, /dogami/);
   assert.match(partyRoll.replyText, /阿青/);
   assert.match(partyRoll.replyText, /STR 9->45/);
+  assert.match(partyRoll.replyText, /门一推开/);
 
   const partyPanel = send("/aikp party");
   assert.equal(partyPanel.ok, true);
