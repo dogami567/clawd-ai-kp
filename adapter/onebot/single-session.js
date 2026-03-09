@@ -24,7 +24,7 @@ const {
   loadStoryPackTemplate,
   formatStoryPackSummary
 } = require("../../core/src/index");
-const { resolveSkillDefault } = require("../../core/src/skill-defaults");
+const { resolveSkillDefault, SKILL_DEFAULTS } = require("../../core/src/skill-defaults");
 const {
   ensureSummaryState,
   appendChatLog,
@@ -89,6 +89,54 @@ const STORY_PACK_REQUIRED_COMMANDS = new Set([
   "clues",
   "npcs",
   "settle"
+]);
+
+const TRADITIONAL_DRAFT_STAGES = new Set(["occupation", "skills"]);
+
+const SKILL_ALIASES = Object.freeze([
+  ["会计", "Accounting"],
+  ["估价", "Appraise"],
+  ["考古", "Archaeology"],
+  ["艺术", "Art/Craft"],
+  ["手艺", "Art/Craft"],
+  ["摄影", "Art/Craft (Photography)"],
+  ["魅惑", "Charm"],
+  ["攀爬", "Climb"],
+  ["信用评级", "Credit Rating"],
+  ["信用", "Credit Rating"],
+  ["伪装", "Disguise"],
+  ["闪避", "Dodge"],
+  ["汽车驾驶", "Drive Auto"],
+  ["驾驶", "Drive Auto"],
+  ["话术", "Fast Talk"],
+  ["斗殴", "Fighting"],
+  ["格斗", "Fighting"],
+  ["手枪", "Firearms"],
+  ["射击", "Firearms"],
+  ["急救", "First Aid"],
+  ["历史", "History"],
+  ["恐吓", "Intimidate"],
+  ["外语", "Language (Other)"],
+  ["法律", "Law"],
+  ["图书馆", "Library Use"],
+  ["图书馆使用", "Library Use"],
+  ["聆听", "Listen"],
+  ["开锁", "Locksmith"],
+  ["医学", "Medicine"],
+  ["博物", "Natural World"],
+  ["自然学", "Natural World"],
+  ["母语", "Own Language"],
+  ["说服", "Persuade"],
+  ["心理学", "Psychology"],
+  ["科学", "Science"],
+  ["生物学", "Science (Biology)"],
+  ["药学", "Science (Pharmacy)"],
+  ["侦查", "Spot Hidden"],
+  ["观察", "Spot Hidden"],
+  ["潜行", "Stealth"],
+  ["生存", "Survival"],
+  ["游泳", "Swim"],
+  ["投掷", "Throw"]
 ]);
 
 function cloneJson(value) {
@@ -230,6 +278,46 @@ function detectOccupationKeyFromText(text, fallback = "journalist") {
   return extractOccupationKeyFromText(text) || fallback;
 }
 
+function getSkillAliasPairs() {
+  const canonicalPairs = Object.keys(SKILL_DEFAULTS).flatMap((skillKey) => ([
+    [skillKey.toLowerCase(), skillKey],
+    [skillKey.replace(/\s+/g, "").toLowerCase(), skillKey]
+  ]));
+  return [...canonicalPairs, ...SKILL_ALIASES];
+}
+
+function extractSkillKeysFromText(text) {
+  if (!text) return [];
+  const normalized = normalizeIntentText(text);
+  const aliasPairs = getSkillAliasPairs()
+    .map(([alias, key]) => [String(alias).toLowerCase(), key])
+    .sort((left, right) => right[0].length - left[0].length);
+  const found = [];
+  for (const [alias, key] of aliasPairs) {
+    if (normalized.includes(alias) && !found.includes(key)) {
+      found.push(key);
+    }
+  }
+  return found;
+}
+
+function extractCreditRatingChoice(text, occupation) {
+  if (!text || !occupation) return null;
+  const normalized = normalizeIntentText(text);
+  const match = normalized.match(/(?:信用(?:评级)?|credit\s*rating|cr)\D{0,3}(\d{1,2})/i) || normalized.match(/\b(\d{1,2})\b/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  if (!Number.isInteger(value)) return null;
+  const [min, max] = occupation.creditRatingRange || [0, 99];
+  if (value < min || value > max) return null;
+  return value;
+}
+
+function wantsAutoSkillAllocation(text = "") {
+  const normalized = normalizeIntentText(text);
+  return includesAny(normalized, ["自动分配", "自动吧", "你分吧", "你来分", "默认就行", "随你", "auto"]);
+}
+
 function buildConversationKey(event = {}) {
   if (event.group_id) return `onebot-group-${sanitizeSegment(event.group_id)}`;
   if (event.user_id) return `onebot-dm-${sanitizeSegment(event.user_id)}`;
@@ -279,6 +367,13 @@ function ensureConversationControlState(meta) {
   meta.pendingStoryPackChoice = meta.pendingStoryPackChoice && typeof meta.pendingStoryPackChoice === "object"
     ? meta.pendingStoryPackChoice
     : null;
+  if (
+    !meta.pendingInvestigatorDraft ||
+    typeof meta.pendingInvestigatorDraft !== "object" ||
+    !TRADITIONAL_DRAFT_STAGES.has(String(meta.pendingInvestigatorDraft.stage || ""))
+  ) {
+    meta.pendingInvestigatorDraft = null;
+  }
   meta.storyPackId = typeof meta.storyPackId === "string" && meta.storyPackId.trim()
     ? meta.storyPackId.trim()
     : null;
@@ -499,9 +594,12 @@ function allocatePool(skillMap, keys, field, budget, capMap = {}) {
   return remaining;
 }
 
-function buildStarterSkills(attributes, occupation, creditRating) {
-  const occupationSkills = normalizeSuggestedSkills(occupation.suggestedSkills || []);
-  const interestSkills = uniqueList([
+function buildStarterSkills(attributes, occupation, creditRating, options = {}) {
+  const occupationSkills = uniqueList([
+    ...normalizeSuggestedSkills(occupation.suggestedSkills || []),
+    "Credit Rating"
+  ]);
+  const defaultInterestSkills = uniqueList([
     ...occupationSkills,
     "Spot Hidden",
     "Listen",
@@ -511,6 +609,13 @@ function buildStarterSkills(attributes, occupation, creditRating) {
     "Fighting",
     "Library Use",
     "First Aid"
+  ]);
+  const preferredSkills = uniqueList(options.preferredSkills || []);
+  const preferredOccupationSkills = preferredSkills.filter((skillKey) => occupationSkills.includes(skillKey) && skillKey !== "Credit Rating");
+  const preferredInterestSkills = uniqueList((options.preferredInterestSkills || preferredSkills).filter((skillKey) => skillKey !== "Credit Rating"));
+  const interestSkills = uniqueList([
+    ...preferredInterestSkills,
+    ...defaultInterestSkills
   ]);
 
   const skillMap = new Map();
@@ -542,18 +647,247 @@ function buildStarterSkills(attributes, occupation, creditRating) {
     remainingOccupation -= allocated;
   }
 
-  allocatePool(skillMap, occupationSkills, "occupationPointsSpent", remainingOccupation, {
+  remainingOccupation = allocatePool(skillMap, uniqueList([
+    ...preferredOccupationSkills,
+    ...occupationSkills
+  ]), "occupationPointsSpent", remainingOccupation, {
     "Credit Rating": Math.max(creditRating, 75),
     "Own Language": 90
   });
-  allocatePool(skillMap, interestSkills, "interestPointsSpent", interestBudget, {
-    "Own Language": 90
-  });
+  if (remainingOccupation >= 5) {
+    allocatePool(skillMap, occupationSkills, "occupationPointsSpent", remainingOccupation, {
+      "Credit Rating": Math.max(creditRating, 75),
+      "Own Language": 90
+    });
+  }
+
+  let remainingInterest = allocatePool(
+    skillMap,
+    preferredInterestSkills.length ? preferredInterestSkills : defaultInterestSkills,
+    "interestPointsSpent",
+    interestBudget,
+    {
+      "Own Language": 90
+    },
+  );
+  if (remainingInterest >= 5) {
+    allocatePool(skillMap, interestSkills, "interestPointsSpent", remainingInterest, {
+      "Own Language": 90
+    });
+  }
 
   return Array.from(skillMap.values()).map((skill) => ({
     ...skill,
     value: Math.min(99, skill.baseValue + skill.occupationPointsSpent + skill.interestPointsSpent)
   }));
+}
+
+function formatSkillPreferenceList(skills = []) {
+  if (!skills.length) return "（当前职业没有预设技能）";
+  return skills.join("、");
+}
+
+function createTraditionalDraft(event, occupationKey = null, randomInt = defaultRandomInt) {
+  const generated = generateTraditionalAttributesDetailed(randomInt);
+  return {
+    stage: occupationKey ? "skills" : "occupation",
+    mode: "traditional",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    occupationKey: occupationKey || null,
+    creditRating: occupationKey ? pickCreditRating(getOccupationTemplate(occupationKey)) : null,
+    attributes: { ...generated.attributes },
+    breakdown: generated.breakdown
+  };
+}
+
+function setPendingInvestigatorDraft(stateBundle, draft) {
+  stateBundle.meta.pendingInvestigatorDraft = draft;
+  stateBundle.meta.updatedAt = new Date().toISOString();
+  saveMeta(stateBundle.layout, stateBundle.meta);
+  return stateBundle.meta.pendingInvestigatorDraft;
+}
+
+function clearPendingInvestigatorDraft(stateBundle) {
+  stateBundle.meta.pendingInvestigatorDraft = null;
+  stateBundle.meta.updatedAt = new Date().toISOString();
+  saveMeta(stateBundle.layout, stateBundle.meta);
+}
+
+function formatTraditionalDraftIntroLines(draft) {
+  return [
+    "先把这张调查员的属性掷出来啦：",
+    ...formatTraditionalBreakdownLines(draft.breakdown || [])
+  ];
+}
+
+function formatOccupationChoiceReply(draft) {
+  const lines = [
+    ...formatTraditionalDraftIntroLines(draft),
+    "",
+    "下一步先定职业。你可以直接回职业名，比如：记者、侦探、医生、教授、艺术家、退伍军人、富家子。",
+    `当前可选职业：${listOccupationTemplates().map((occupation) => `${occupation.name}(${occupation.key})`).join("、")}`
+  ];
+  return lines.join("\n");
+}
+
+function formatSkillAllocationPrompt(draft) {
+  const occupation = getOccupationTemplate(draft.occupationKey);
+  const occupationBudget = calculateOccupationBudget(draft.attributes, occupation.occupationSkillFormula);
+  const interestBudget = draft.attributes.INT * 2;
+  const lines = [
+    ...formatTraditionalDraftIntroLines(draft),
+    "",
+    `职业先定成 ${occupation.name}。`,
+    `职业技能点：${occupation.occupationSkillFormula} = ${occupationBudget} 点｜兴趣点：INTx2 = ${interestBudget} 点。`,
+    `信用评级范围：${occupation.creditRatingRange?.[0] ?? 0}-${occupation.creditRatingRange?.[1] ?? 99}（默认会取中间值 ${pickCreditRating(occupation)}）。`,
+    `这个职业常用技能：${formatSkillPreferenceList(normalizeSuggestedSkills(occupation.suggestedSkills || []))}。`,
+    "你现在可以直接说想重点拉高哪些技能，也可以顺手给信用评级，比如：",
+    "“信用20，侦查、图书馆、心理学、说服”",
+    "“我想主走斗殴、射击、潜行，再带一点急救”",
+    "不想细配的话，回“自动分配”也行。"
+  ];
+  return lines.join("\n");
+}
+
+function buildTraditionalSkillsFromDraft(draft, text = "") {
+  const occupation = getOccupationTemplate(draft.occupationKey);
+  const preferredSkills = extractSkillKeysFromText(text);
+  const creditRating = extractCreditRatingChoice(text, occupation) || draft.creditRating || pickCreditRating(occupation);
+  return {
+    creditRating,
+    preferredSkills,
+    skills: buildStarterSkills(draft.attributes, occupation, creditRating, {
+      preferredSkills
+    })
+  };
+}
+
+function formatFinalizedTraditionalReply(bundle, preferences = {}) {
+  const lines = [formatGeneratedInvestigatorReply(bundle)];
+  if (preferences.creditRating != null) {
+    lines.push(`这次我按信用评级 ${preferences.creditRating} 来配职业面。`);
+  }
+  if (Array.isArray(preferences.preferredSkills) && preferences.preferredSkills.length) {
+    lines.push(`偏重点我按这些技能先拉了一版：${preferences.preferredSkills.join("、")}。`);
+  }
+  return lines.join("\n");
+}
+
+function beginTraditionalDraft(event, stateBundle, occupationKey = null, randomInt = defaultRandomInt) {
+  const draft = createTraditionalDraft(event, occupationKey, randomInt);
+  setPendingInvestigatorDraft(stateBundle, draft);
+  return {
+    draft,
+    reply: occupationKey ? formatSkillAllocationPrompt(draft) : formatOccupationChoiceReply(draft)
+  };
+}
+
+function applyTraditionalDraftOccupation(stateBundle, occupationKey) {
+  const draft = stateBundle.meta.pendingInvestigatorDraft;
+  if (!draft) return null;
+  draft.occupationKey = occupationKey;
+  draft.creditRating = pickCreditRating(getOccupationTemplate(occupationKey));
+  draft.stage = "skills";
+  draft.updatedAt = new Date().toISOString();
+  setPendingInvestigatorDraft(stateBundle, draft);
+  return {
+    draft,
+    reply: formatSkillAllocationPrompt(draft)
+  };
+}
+
+function finalizeTraditionalDraft(event, stateBundle, text = "", randomInt = defaultRandomInt) {
+  const draft = stateBundle.meta.pendingInvestigatorDraft;
+  if (!draft?.occupationKey) return null;
+  const autoAllocate = wantsAutoSkillAllocation(text);
+  const parsed = buildTraditionalSkillsFromDraft(draft, autoAllocate ? "" : text);
+  if (!autoAllocate && !parsed.preferredSkills.length) {
+    return {
+      reply: `我先知道你想偏哪些技能，才能把这张卡配得更像 CoC 7 版那种手感喔。\n${formatSkillAllocationPrompt(draft)}`
+    };
+  }
+
+  const bundle = {
+    generation: {
+      breakdown: draft.breakdown
+    },
+    mode: "traditional",
+    occupationKey: draft.occupationKey,
+    investigator: createInvestigatorFromTraditional({
+      ...buildGeneratedBase(event, draft.occupationKey),
+      creditRating: parsed.creditRating,
+      luck: draft.attributes.Luck,
+      attributeAssignments: {
+        STR: draft.attributes.STR,
+        CON: draft.attributes.CON,
+        DEX: draft.attributes.DEX,
+        APP: draft.attributes.APP,
+        POW: draft.attributes.POW,
+        SIZ: draft.attributes.SIZ,
+        INT: draft.attributes.INT,
+        EDU: draft.attributes.EDU
+      },
+      skills: parsed.skills,
+      inventory: [
+        { name: "手电", category: "tool", quantity: 1 },
+        { name: "笔记本", category: "tool", quantity: 1 }
+      ]
+    }, randomInt)
+  };
+  upsertInvestigatorForUser(event, stateBundle, bundle.investigator);
+  clearPendingInvestigatorDraft(stateBundle);
+  return {
+    bundle,
+    preferences: {
+      creditRating: parsed.creditRating,
+      preferredSkills: parsed.preferredSkills
+    },
+    reply: formatFinalizedTraditionalReply(bundle, {
+      creditRating: parsed.creditRating,
+      preferredSkills: parsed.preferredSkills
+    })
+  };
+}
+
+function handlePendingInvestigatorDraft(text, event, stateBundle, options = {}) {
+  const draft = stateBundle.meta.pendingInvestigatorDraft;
+  if (!draft || !text || isAiKpCommand(text)) return null;
+  const randomInt = options.randomInt || defaultRandomInt;
+  const normalized = normalizeIntentText(text);
+
+  if (includesAny(normalized, ["quickfire", "快速车卡", "快速建卡", "快车卡", "快速卡"])) {
+    const occupationKey = extractOccupationKeyFromText(text) || draft.occupationKey || "journalist";
+    const bundle = createInvestigatorForMode(event, "quickfire", occupationKey, randomInt);
+    upsertInvestigatorForUser(event, stateBundle, bundle.investigator);
+    clearPendingInvestigatorDraft(stateBundle);
+    return {
+      bundle,
+      reply: formatGeneratedInvestigatorReply(bundle)
+    };
+  }
+
+  if (draft.stage === "occupation") {
+    const occupationKey = extractOccupationKeyFromText(text);
+    if (!occupationKey) {
+      return { reply: formatOccupationChoiceReply(draft) };
+    }
+    const applied = applyTraditionalDraftOccupation(stateBundle, occupationKey);
+    const occupation = getOccupationTemplate(occupationKey);
+    const hasSkillReply = wantsAutoSkillAllocation(text)
+      || extractSkillKeysFromText(text).length > 0
+      || extractCreditRatingChoice(text, occupation) != null;
+    if (hasSkillReply) {
+      return finalizeTraditionalDraft(event, stateBundle, text, randomInt);
+    }
+    return applied;
+  }
+
+  if (draft.stage === "skills") {
+    return finalizeTraditionalDraft(event, stateBundle, text, randomInt);
+  }
+
+  return null;
 }
 
 function pickCreditRating(occupation) {
@@ -1097,8 +1431,9 @@ function formatAwaitingInvestigatorReply(stateBundle) {
     `这次先跑《${title}》。`,
     "你现在还没车卡，先把调查员卡定下来，我再给你正式开场。",
     "群里继续操作时记得带 `@麦麦`。",
-    "可以直接说“我想一次全车完卡，角色选记者”或“给我快速车卡，职业医生”。",
-    "继续用指令也行：`/aikp roll journalist`、`/aikp quickfire artist`。"
+    "传统建卡现在会先掷属性，再定职业和擅长技能；想省事也可以直接走 quickfire。",
+    "可以直接说“先roll属性”“记者吧，信用20，侦查图书馆心理学说服”或“给我快速车卡，职业医生”。",
+    "继续用指令也行：`/aikp roll`、`/aikp roll journalist`、`/aikp quickfire artist`。"
   ].join("\n");
 }
 
@@ -1140,11 +1475,11 @@ function formatHelpReply() {
   return [
     "AI-KP 可用指令：",
     "- 群聊里和我继续交互时，统一带 `@麦麦`，避免误吃到旁边人的讨论",
-    "- 平时直接说自然语言也行，例如：我想一次全车完卡，角色选记者",
+    "- 平时直接说自然语言也行，例如：先roll属性、记者吧，信用20，侦查图书馆心理学说服、给我快速医生卡",
     "- /aikp start 开始跑团；如果有旧档会先问你续上还是新开，没有旧档就先选剧本",
     "- /aikp packs 查看当前可选剧本",
     "- /aikp pack <storyPackId> 选择这条要跑的剧本",
-    "- /aikp roll <occupationKey> 单人传统随机车卡",
+    "- /aikp roll [occupationKey] 单人传统车卡；会先掷属性，再等你补职业/信用/技能偏好",
     "- /aikp quickfire <occupationKey> 单人快速车卡",
     "- /aikp party-roll <occupationKey> 为当前已出现玩家批量传统随机车卡",
     "- /aikp party-quickfire <occupationKey> 为当前已出现玩家批量快速车卡",
@@ -1250,6 +1585,9 @@ function formatPartyRollReply(createdBundles, mode) {
 }
 
 function runSingleRollCommand(event, stateBundle, mode, occupationKey, randomInt) {
+  if (mode === "traditional") {
+    return beginTraditionalDraft(event, stateBundle, occupationKey || null, randomInt);
+  }
   const bundle = createInvestigatorForMode(event, mode, occupationKey, randomInt);
   upsertInvestigatorForUser(event, stateBundle, bundle.investigator);
   return {
@@ -1321,6 +1659,16 @@ function buildChatLogEntry(event, direction, message) {
 function buildStateSnapshot(stateBundle) {
   const turnState = ensureTurnState(stateBundle.meta);
   const currentActor = turnState.currentActorId ? stateBundle.sessionState.investigators[turnState.currentActorId] : null;
+  const pendingDraft = stateBundle.meta.pendingInvestigatorDraft
+    && TRADITIONAL_DRAFT_STAGES.has(String(stateBundle.meta.pendingInvestigatorDraft.stage || ""))
+    ? {
+      stage: stateBundle.meta.pendingInvestigatorDraft.stage,
+      occupationKey: stateBundle.meta.pendingInvestigatorDraft.occupationKey || null,
+      occupationName: stateBundle.meta.pendingInvestigatorDraft.occupationKey
+        ? getOccupationTemplate(stateBundle.meta.pendingInvestigatorDraft.occupationKey).name
+        : null
+    }
+    : null;
   return {
     updatedAt: new Date().toISOString(),
     conversationKey: stateBundle.layout.conversationKey,
@@ -1334,6 +1682,7 @@ function buildStateSnapshot(stateBundle) {
       currentActorName: currentActor?.name || null,
       round: turnState.round
     },
+    pendingInvestigatorDraft: pendingDraft,
     revealedClues: (stateBundle.sessionState.scene?.clues || [])
       .filter((item) => item.revealed)
       .map((item) => item.title),
@@ -1473,7 +1822,8 @@ function preserveConversationControls(meta = {}) {
   return {
     archiveHistory: cloneJson(meta.archiveHistory || []),
     runtimeProfileId: meta.runtimeProfileId || "maimai-kp-v1",
-    storyPackId: meta.storyPackId || null
+    storyPackId: meta.storyPackId || null,
+    pendingInvestigatorDraft: null
   };
 }
 
@@ -1483,6 +1833,7 @@ function applyPreservedConversationControls(meta = {}, preserved = {}) {
   meta.runtimeProfileId = preserved.runtimeProfileId || meta.runtimeProfileId || "maimai-kp-v1";
   meta.pendingResumeChoice = null;
   meta.pendingStoryPackChoice = null;
+  meta.pendingInvestigatorDraft = null;
   meta.storyPackId = preserved.storyPackId || meta.storyPackId || null;
   return meta;
 }
@@ -1872,6 +2223,24 @@ function buildRollOperationEvents(event, result, partyMode = false) {
     });
   }
 
+  if (result.draft && !result.bundle) {
+    const draft = result.draft;
+    const occupationKey = draft.occupationKey || null;
+    const occupationName = occupationKey ? getOccupationTemplate(occupationKey).name : null;
+    const summary = draft.stage === "occupation"
+      ? `${getSenderName(event)} 开始了传统车卡，等待职业选择`
+      : `${getSenderName(event)} 进入传统车卡技能分配阶段${occupationName ? `，职业 ${occupationName}` : ""}`;
+    return [
+      buildOperationEvent("character.draft", summary, {
+        userId: event.user_id != null ? String(event.user_id) : null,
+        stage: draft.stage,
+        occupationKey,
+        occupationName,
+        breakdown: cloneJson(draft.breakdown || [])
+      })
+    ];
+  }
+
   if (!result.bundle) return [];
   const description = result.bundle.mode === "quickfire"
     ? `${getSenderName(event)} 快速车卡完成，职业 ${result.bundle.investigator.occupation}`
@@ -1916,10 +2285,10 @@ function detectNaturalIntent(text, actorResult = {}) {
   }
 
   const explicitOccupationKey = extractOccupationKeyFromText(text);
-  const occupationKey = explicitOccupationKey || actorResult.investigator?.occupationKey || "journalist";
   const wantsQuickfire = includesAny(normalized, ["quickfire", "快速车卡", "快速建卡", "快车卡", "快速卡"]);
   const wantsRoll = includesAny(normalized, ["车卡", "建卡", "开卡", "人物卡", "角色卡", "roll卡", "roll"]) || includesAny(normalized, ["角色选", "职业选", "职业是", "职业当", "我选"]);
   const wantsParty = includesAny(normalized, ["全车", "全员", "一起车", "大家都", "批量车卡", "一次全车完卡", "一起开卡"]);
+  const occupationKey = explicitOccupationKey || actorResult.investigator?.occupationKey || null;
   const wantsStart = includesAny(normalized, [
     "想跑团",
     "我要跑团",
@@ -2386,7 +2755,7 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
   }
 
   if (command === "/aikp" && args[0] === "roll") {
-    const occupationKey = resolveOccupationKey(args[1], actorResult.investigator?.occupationKey || "journalist");
+    const occupationKey = args[1] ? resolveOccupationKey(args[1], actorResult.investigator?.occupationKey || "journalist") : null;
     setSessionMode(stateBundle, "kp");
     const rollResult = runSingleRollCommand(event, stateBundle, "traditional", occupationKey, randomInt);
     const currentActor = ensureActorForUser(event, stateBundle, { autoCreateInvestigator: false });
@@ -2548,6 +2917,30 @@ function handleOneBotMessage(event, options = {}) {
     }
   }
 
+  if (stateBundle.meta.pendingInvestigatorDraft && text && !isAiKpCommand(text)) {
+    const pendingResult = handlePendingInvestigatorDraft(text, event, stateBundle, options);
+    if (pendingResult) {
+      const currentBundle = pendingResult.stateBundle || stateBundle;
+      const currentActor = pendingResult.bundle
+        ? ensureActorForUser(event, currentBundle, { autoCreateInvestigator: false })
+        : actorResult;
+      return flushConversationArtifacts(event, currentBundle, {
+        ok: true,
+        reply: pendingResult.bundle
+          ? appendSceneStartReplyIfNeeded(currentBundle, currentActor, pendingResult.reply)
+          : pendingResult.reply
+      }, {
+        includeContextPacket: options.includeContextPacket === true,
+        contextOptions,
+        summaryOptions,
+        operationEvents: [
+          ...(Array.isArray(pendingResult.operationEvents) ? pendingResult.operationEvents : []),
+          ...(pendingResult.bundle ? buildRollOperationEvents(event, pendingResult, false) : [])
+        ]
+      });
+    }
+  }
+
   if (!text) {
     const startReply = buildStartPanelResponse(event, stateBundle, actorResult);
     return flushConversationArtifacts(event, startReply.stateBundle || stateBundle, {
@@ -2607,7 +3000,7 @@ function handleOneBotMessage(event, options = {}) {
     return flushConversationArtifacts(event, stateBundle, {
       ok: false,
       reason: "missing_investigator",
-      reply: "你还没车卡喔。可以直接说“我想一次全车完卡，角色选记者”，或者“给我快速车卡，职业医生”；要继续用指令也行：`/aikp roll journalist`。"
+      reply: "你还没车卡喔。传统建卡可以直接说“先roll属性”或“记者吧，信用20，侦查图书馆心理学说服”；想省事就说“给我快速车卡，职业医生”。要继续用指令也行：`/aikp roll`、`/aikp roll journalist`、`/aikp quickfire doctor`。"
     }, {
       includeContextPacket: options.includeContextPacket === true,
       contextOptions,

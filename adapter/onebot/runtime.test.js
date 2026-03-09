@@ -28,6 +28,18 @@ function makeAtEnvelope(message, overrides = {}) {
   return makeEnvelope(`[CQ:at,qq=${BOT_ID}] ${message}`, overrides);
 }
 
+function completeTraditionalEnvelope(storageRoot, occupationKey = "journalist") {
+  const opened = handleOneBotEnvelope(makeAtEnvelope(`/aikp roll ${occupationKey}`), {
+    storageRoot,
+    randomInt: () => 3,
+  });
+  const finalized = handleOneBotEnvelope(makeAtEnvelope("自动分配"), {
+    storageRoot,
+    randomInt: () => 3,
+  });
+  return { opened, finalized };
+}
+
 test("builds group send action for group envelope", () => {
   const action = buildOneBotSendAction(makeEnvelope("hi"), "hello");
   assert.equal(action.action, "send_group_msg");
@@ -119,9 +131,11 @@ test("active group session ignores chatter without bot mention", () => {
 
 test("handles onebot envelope through single-session runtime", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-runtime-"));
-  const roll = handleOneBotEnvelope(makeAtEnvelope("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
-  assert.equal(roll.ok, true);
-  assert.match(roll.replyText, /传统随机车卡/);
+  const roll = completeTraditionalEnvelope(storageRoot);
+  assert.equal(roll.opened.ok, true);
+  assert.match(roll.opened.replyText, /职业先定成 记者/);
+  assert.equal(roll.finalized.ok, true);
+  assert.match(roll.finalized.replyText, /传统随机车卡/);
 
   const pack = handleOneBotEnvelope(makeAtEnvelope("/aikp pack old-church-arc-pack"), { storageRoot });
   assert.equal(pack.ok, true);
@@ -140,7 +154,7 @@ test("pending resume choice keeps follow-up group reply inside ai-kp runtime", (
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-runtime-"));
 
   handleOneBotEnvelope(makeAtEnvelope("/aikp pack old-church-arc-pack"), { storageRoot });
-  handleOneBotEnvelope(makeAtEnvelope("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  completeTraditionalEnvelope(storageRoot);
   handleOneBotEnvelope(makeAtEnvelope("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   handleOneBotEnvelope(makeAtEnvelope("先不跑了"), { storageRoot });
 

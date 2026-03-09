@@ -27,6 +27,18 @@ function selectDefaultStoryPack(storageRoot) {
   return handleOneBotMessage(makeEvent("/aikp pack old-church-arc-pack"), { storageRoot });
 }
 
+function completeTraditionalInvestigator(storageRoot, options = {}) {
+  const occupationKey = Object.prototype.hasOwnProperty.call(options, "occupationKey")
+    ? options.occupationKey
+    : "journalist";
+  const skillReply = options.skillReply || "自动分配";
+  const randomInt = options.randomInt || (() => 3);
+  const rollCommand = occupationKey ? `/aikp roll ${occupationKey}` : "/aikp roll";
+  const opened = handleOneBotMessage(makeEvent(rollCommand), { storageRoot, randomInt });
+  const finalized = handleOneBotMessage(makeEvent(skillReply), { storageRoot, randomInt });
+  return { opened, finalized };
+}
+
 test("builds stable onebot conversation key", () => {
   assert.equal(buildConversationKey(makeEvent("hi")), "onebot-group-95270001");
   assert.equal(buildConversationKey({ user_id: 123, message: "hi" }), "onebot-dm-123");
@@ -42,12 +54,18 @@ test("start reply prompts players to pick a story pack before opening scene text
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
-test("single player can roll a traditional investigator", () => {
+test("single player traditional chargen now rolls attributes first and finalizes after skill choice", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
-  const result = handleOneBotMessage(makeEvent("/aikp roll detective"), { storageRoot, randomInt: () => 3 });
-  assert.equal(result.ok, true);
-  assert.match(result.reply, /传统随机车卡/);
-  assert.match(result.reply, /私家侦探/);
+  const opened = handleOneBotMessage(makeEvent("/aikp roll detective"), { storageRoot, randomInt: () => 3 });
+  assert.equal(opened.ok, true);
+  assert.match(opened.reply, /先把这张调查员的属性掷出来啦/);
+  assert.match(opened.reply, /职业先定成 私家侦探/);
+  assert.match(opened.reply, /职业技能点/);
+
+  const finalized = handleOneBotMessage(makeEvent("自动分配"), { storageRoot, randomInt: () => 3 });
+  assert.equal(finalized.ok, true);
+  assert.match(finalized.reply, /传统随机车卡 已经给你落好了/);
+  assert.match(finalized.reply, /私家侦探/);
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
@@ -100,15 +118,34 @@ test("natural language can pick a story pack with a loose referential phrase", (
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
-test("first chargen after story pack selection auto-attaches the formal opening", () => {
+test("first traditional chargen after story pack selection waits for skill choice before opening", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   handleOneBotMessage(makeEvent("我想跑团"), { storageRoot });
   handleOneBotMessage(makeEvent("1"), { storageRoot });
-  const result = handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  const opened = handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  assert.equal(opened.ok, true);
+  assert.match(opened.reply, /职业先定成 记者/);
+  assert.doesNotMatch(opened.reply, /门一推开/);
+
+  const result = handleOneBotMessage(makeEvent("自动分配"), { storageRoot, randomInt: () => 3 });
   assert.equal(result.ok, true);
   assert.match(result.reply, /传统随机车卡/);
   assert.match(result.reply, /当前绑定调查员：dogami/);
   assert.match(result.reply, /门一推开/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("traditional chargen can finish in one natural sentence after attribute roll", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  const opened = handleOneBotMessage(makeEvent("/aikp roll"), { storageRoot, randomInt: () => 3 });
+  assert.equal(opened.ok, true);
+  assert.match(opened.reply, /下一步先定职业/);
+
+  const finalized = handleOneBotMessage(makeEvent("记者吧，信用20，侦查、图书馆、心理学、说服"), { storageRoot, randomInt: () => 3 });
+  assert.equal(finalized.ok, true);
+  assert.match(finalized.reply, /传统随机车卡 已经给你落好了/);
+  assert.match(finalized.reply, /这次我按信用评级 20 来配职业面/);
+  assert.match(finalized.reply, /Spot Hidden|Library Use|Psychology|Persuade/);
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
@@ -159,7 +196,7 @@ test("plain action is blocked before chargen", () => {
 test("rolled investigator can route old church natural language into scene action", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   selectDefaultStoryPack(storageRoot);
-  handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  completeTraditionalInvestigator(storageRoot);
   const result = handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   assert.equal(result.ok, true);
   assert.equal(result.action.kind, "explore");
@@ -174,7 +211,7 @@ test("rolled investigator can route old church natural language into scene actio
 test("open checks show roll and target in player-visible format", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   selectDefaultStoryPack(storageRoot);
-  handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  completeTraditionalInvestigator(storageRoot);
   const result = handleOneBotMessage(makeEvent("我去找守墓人聊聊钟声"), { storageRoot, randomInt: () => 28 });
   assert.equal(result.ok, true);
   assert.match(result.reply, /投掷：28（目标 \d+，/);
@@ -195,7 +232,7 @@ test("sheet command shows current investigator", () => {
 test("returns state summary command", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   selectDefaultStoryPack(storageRoot);
-  handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  completeTraditionalInvestigator(storageRoot);
   const result = handleOneBotMessage(makeEvent("/aikp state"), { storageRoot });
   assert.equal(result.ok, true);
   assert.match(result.reply, /场景：/);
@@ -237,7 +274,7 @@ test("authoring validators keep campaign and story pack loadable", () => {
 test("hooks and advance commands support conditional transitions", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   selectDefaultStoryPack(storageRoot);
-  handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  completeTraditionalInvestigator(storageRoot);
   const hooksBefore = handleOneBotMessage(makeEvent("/aikp hooks"), { storageRoot });
   assert.equal(hooksBefore.ok, true);
   assert.match(hooksBefore.reply, /withdraw-with-clues/);
@@ -252,7 +289,7 @@ test("hooks and advance commands support conditional transitions", () => {
 test("scene and recap commands show environment and stage summary", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   selectDefaultStoryPack(storageRoot);
-  handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  completeTraditionalInvestigator(storageRoot);
   handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   const scene = handleOneBotMessage(makeEvent("/aikp scene"), { storageRoot });
   const recap = handleOneBotMessage(makeEvent("/aikp recap"), { storageRoot });
@@ -282,7 +319,7 @@ test("party command shows party panel and current focus", () => {
 test("clues and npcs commands show dedicated panels", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   selectDefaultStoryPack(storageRoot);
-  handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  completeTraditionalInvestigator(storageRoot);
   handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   const clues = handleOneBotMessage(makeEvent("/aikp clues"), { storageRoot });
   const npcs = handleOneBotMessage(makeEvent("/aikp npcs"), { storageRoot });
@@ -325,7 +362,7 @@ test("focus and next commands switch current actor", () => {
 test("settle command returns summary lines", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   selectDefaultStoryPack(storageRoot);
-  handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  completeTraditionalInvestigator(storageRoot);
   handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   const result = handleOneBotMessage(makeEvent("/aikp settle"), { storageRoot });
   assert.equal(result.ok, true);
@@ -337,7 +374,7 @@ test("settle command returns summary lines", () => {
 test("hidden checks stay hidden in reply line", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   selectDefaultStoryPack(storageRoot);
-  handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  completeTraditionalInvestigator(storageRoot);
   const result = handleOneBotMessage(makeEvent("我直接把祭坛下面那块木板掀开"), { storageRoot, randomInt: () => 81 });
   assert.equal(result.ok, true);
   assert.match(result.reply, /暗骰：Fighting/);
@@ -402,7 +439,7 @@ test("writes chat log, operation ledger, state snapshot and summary chunks", () 
 test("reset command rebuilds session state", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   selectDefaultStoryPack(storageRoot);
-  handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  completeTraditionalInvestigator(storageRoot);
   handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   const before = handleOneBotMessage(makeEvent("/aikp state"), { storageRoot });
   assert.match(before.reply, /时间：5 分钟/);
@@ -416,7 +453,7 @@ test("reset command rebuilds session state", () => {
 test("start prompts to resume or open a new line when an old save exists", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   selectDefaultStoryPack(storageRoot);
-  handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  completeTraditionalInvestigator(storageRoot);
   handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   handleOneBotMessage(makeEvent("先不跑了"), { storageRoot });
 
@@ -435,7 +472,7 @@ test("new line archives current run and resume can restore the archived save", (
   const archiveRoot = join(storageRoot, "archives", conversationKey);
 
   selectDefaultStoryPack(storageRoot);
-  handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  completeTraditionalInvestigator(storageRoot);
   handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
   handleOneBotMessage(makeEvent("先不跑了"), { storageRoot });
   handleOneBotMessage(makeEvent("我想跑团"), { storageRoot });

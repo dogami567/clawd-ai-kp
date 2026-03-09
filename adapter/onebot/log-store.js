@@ -191,6 +191,15 @@ function buildInjectionText(packet) {
     ""
   ];
 
+  if (packet.state.pendingInvestigatorDraft?.stage) {
+    lines.push(
+      `[Pending Chargen]`,
+      `- 阶段：${packet.state.pendingInvestigatorDraft.stage}`,
+      `- 职业：${packet.state.pendingInvestigatorDraft.occupationName || packet.state.pendingInvestigatorDraft.occupationKey || "未定"}`,
+      ""
+    );
+  }
+
   if (packet.summaryChunks.length) {
     lines.push("[Summary Chunks]");
     for (const chunk of packet.summaryChunks) {
@@ -237,7 +246,8 @@ function buildContextPacket(layout, meta, stateSnapshot, options = {}) {
       scene: stateSnapshot.scene,
       turnState: stateSnapshot.turnState,
       revealedClues: stateSnapshot.revealedClues,
-      investigators: stateSnapshot.investigators
+      investigators: stateSnapshot.investigators,
+      pendingInvestigatorDraft: stateSnapshot.pendingInvestigatorDraft || null
     },
     summaryState: stateSnapshot.summaryState || meta.summaryState || {},
     summaryChunks,
