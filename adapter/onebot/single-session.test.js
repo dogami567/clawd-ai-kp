@@ -90,6 +90,16 @@ test("story pack selection switches session into prestart lobby without dumping 
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
+test("natural language can pick a story pack with a loose referential phrase", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  handleOneBotMessage(makeEvent("我想跑团"), { storageRoot });
+  const result = handleOneBotMessage(makeEvent("旧教堂那个就行"), { storageRoot });
+  assert.equal(result.ok, true);
+  assert.match(result.reply, /这次先跑《旧教堂异响》/);
+  assert.match(result.reply, /你现在还没车卡/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
 test("first chargen after story pack selection auto-attaches the formal opening", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   handleOneBotMessage(makeEvent("我想跑团"), { storageRoot });

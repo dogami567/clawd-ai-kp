@@ -130,6 +130,15 @@ function getSelectedStoryPackEntry(meta = {}) {
   return listStoryPackEntries().find((entry) => entry.storyPack.id === storyPackId) || null;
 }
 
+function normalizeStoryPackSelectorText(text = "") {
+  return normalizeIntentText(text)
+    .replace(/\s+/g, "")
+    .replace(/^(那就|就|我选|选|跑|开|来跑|来个|玩|想跑|想开)+/g, "")
+    .replace(/(那个|这个|这条|那条|这一条|那一条|这个本|那个本|这个剧本|那个剧本|这个模组|那个模组|故事包)/g, "")
+    .replace(/(就行|就好|可以了|好了|行了|可以|行吧|吧|呀|啊|啦|呢|嘛)+$/g, "")
+    .trim();
+}
+
 function resolveStoryPackSelection(text = "") {
   const normalized = normalizeIntentText(text);
   if (!normalized) return null;
@@ -140,6 +149,7 @@ function resolveStoryPackSelection(text = "") {
 
   const entries = listStoryPackEntries();
   const trimmed = normalized.trim();
+  const looseTrimmed = normalizeStoryPackSelectorText(text);
   if (/^\d+$/.test(trimmed)) {
     const byIndex = entries.find((entry) => String(entry.index) === trimmed);
     if (byIndex) return { kind: "select", storyPackId: byIndex.storyPack.id };
@@ -155,8 +165,16 @@ function resolveStoryPackSelection(text = "") {
     ]
       .map((value) => normalizeIntentText(value))
       .filter(Boolean);
+    const looseAliases = aliases
+      .map((alias) => normalizeStoryPackSelectorText(alias))
+      .filter(Boolean);
 
-    if (aliases.some((alias) => trimmed === alias || trimmed.includes(alias) || alias.includes(trimmed))) {
+    if (
+      aliases.some((alias) => trimmed === alias || trimmed.includes(alias) || alias.includes(trimmed)) ||
+      (looseTrimmed && looseAliases.some(
+        (alias) => looseTrimmed === alias || looseTrimmed.includes(alias) || alias.includes(looseTrimmed)
+      ))
+    ) {
       return { kind: "select", storyPackId: entry.storyPack.id };
     }
   }
