@@ -3,6 +3,7 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "test": "node --test adapter/onebot/single-session.test.js adapter/onebot/runtime.test.js adapter/onebot/http-bridge.test.js"
+    "test": "node --test adapter/onebot/single-session.test.js adapter/onebot/runtime.test.js adapter/onebot/http-bridge.test.js",
+    "sync": "node scripts/git-sync.mjs"
   }
 }

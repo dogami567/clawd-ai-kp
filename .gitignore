@@ -1,0 +1,4 @@
+runtime/
+.env
+.env.*
+core/data/scenes/imported-scene.scene.json
