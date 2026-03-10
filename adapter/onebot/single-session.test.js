@@ -74,6 +74,11 @@ function getSessionFile(storageRoot, eventOverrides = {}) {
   return join(storageRoot, "sessions", `${conversationKey}.json`);
 }
 
+function getLedgerFile(storageRoot, eventOverrides = {}) {
+  const conversationKey = buildConversationKey(makeEvent("session", eventOverrides));
+  return join(storageRoot, "logs", conversationKey, "ledger", "operations.jsonl");
+}
+
 function rewriteSession(storageRoot, updater, eventOverrides = {}) {
   const sessionFile = getSessionFile(storageRoot, eventOverrides);
   const snapshot = JSON.parse(readFileSync(sessionFile, "utf8"));
@@ -1038,6 +1043,37 @@ test("hidden checks stay hidden in reply line", () => {
   assert.equal(result.ok, true);
   assert.match(result.reply, /暗骰：Fighting/);
   assert.doesNotMatch(result.reply, /81\/35/);
+  assert.doesNotMatch(result.reply, /failure|success|regular|hard|extreme|fumble/i);
+
+  const operations = readJsonLines(getLedgerFile(storageRoot));
+  const hiddenEvent = [...operations].reverse().find((entry) => entry.kind === "scene.action");
+  assert.equal(hiddenEvent.result.mode, "hidden");
+  assert.equal(hiddenEvent.result.roll, 81);
+  assert.equal(Number.isInteger(hiddenEvent.result.targetValue), true);
+  assert.equal(typeof hiddenEvent.result.result.successLevel, "string");
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("hidden san keeps player reply opaque while operation log retains full event fields", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  prepareQuickfireInvestigator(storageRoot);
+
+  const result = handleOneBotMessage(makeEvent("/aikp san 0 1d4 hidden"), {
+    storageRoot,
+    randomInt: makeQueuedRandomInt([99, 4], 4)
+  });
+  assert.equal(result.ok, true);
+  assert.match(result.reply, /SAN 暗骰/);
+  assert.doesNotMatch(result.reply, /99\/|failure|success|regular|hard|extreme|fumble/i);
+
+  const operations = readJsonLines(getLedgerFile(storageRoot));
+  const sanEvent = [...operations].reverse().find((entry) => entry.kind === "scene.action" && entry.result?.sanNow != null);
+  assert.equal(sanEvent.result.mode, "hidden");
+  assert.equal(Number.isInteger(sanEvent.result.roll), true);
+  assert.equal(typeof sanEvent.result.successLevel, "string");
+  assert.equal(Number.isInteger(sanEvent.result.sanLoss), true);
+  assert.equal(sanEvent.result.sanNow <= sanEvent.result.sanBefore, true);
+
   rmSync(storageRoot, { recursive: true, force: true });
 });
 

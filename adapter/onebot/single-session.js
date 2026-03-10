@@ -3022,7 +3022,7 @@ function formatStateDelta(beforeSessionState, afterSessionState) {
 function formatCheckResultLine(event) {
   if (!event?.result) return null;
   if (event.mode === "hidden") {
-    return `暗骰：${event.skillKey}（${event.result.successLevel}）`;
+    return `暗骰：${event.skillKey}`;
   }
   return `投掷：${event.roll}（目标 ${event.targetValue}，${event.result.successLevel}）`;
 }
@@ -3132,7 +3132,9 @@ function formatResolvedActionResult(result) {
   if (result.kind === "san_check" && result.event) {
     const event = result.event;
     const lines = [
-      `SAN 检定：${event.roll}/${event.sanBefore}（${event.successLevel}）`,
+      event.mode === "hidden"
+        ? "SAN 暗骰：这下我先替你记结果了。"
+        : `SAN 检定：${event.roll}/${event.sanBefore}（${event.successLevel}）`,
       `SAN ${event.sanBefore}→${event.sanNow}（损失 ${event.sanLoss}）`,
       `今日累计损失 ${event.daySanLoss}/${event.daySanThreshold}`
     ];

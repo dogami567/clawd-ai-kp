@@ -207,7 +207,10 @@ function submitAction(sessionState, action, randomInt) {
   if (action.kind === "san_check") {
     return {
       kind: "san_check",
-      event: runSanCheck(sessionState, action, randomInt)
+      event: {
+        ...runSanCheck(sessionState, action, randomInt),
+        mode: action.mode || "hidden"
+      }
     };
   }
 
