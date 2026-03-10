@@ -1,6 +1,11 @@
 # 夜探旧教堂 · 单幕最终场景稿 v0.1
 
 > 用途：作为 `AI-KP` 当前第一张可直接试玩的调查型单幕底稿。
+>
+> 现在的对外入口已拆成三份：
+> - 玩家版：`docs/old-church-night-player-v0.1.md`
+> - KP版：`docs/old-church-night-kp-v0.1.md`
+> - 系统版：`docs/old-church-night-system-v0.1.md`
 > 
 > 目标不是一次把所有神话真相掀到底，而是让玩家在一幕里体验到：
 > - 调查推进

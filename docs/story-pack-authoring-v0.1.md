@@ -102,3 +102,16 @@
 - 不会继续退回“手工一张张塞场景”
 - 方便以后接故事书、素材包、作者输入格式
 - 更适合 AIKP 后续做多幕推进与批量导入
+
+## 8. 旧教堂样板的三份入口
+
+为了避免玩家可见文案、主持手册和系统导入稿继续混在一份文档里，旧教堂样板现在拆成三份：
+
+- 玩家版：`docs/old-church-night-player-v0.1.md`
+- KP版：`docs/old-church-night-kp-v0.1.md`
+- 系统版：`docs/old-church-night-system-v0.1.md`
+
+建议用法：
+- 玩家-facing 文案先看玩家版
+- 主持提示、真相层和节奏建议先看 KP版
+- `story pack / campaign / scene` 字段映射与导入备注先看系统版
