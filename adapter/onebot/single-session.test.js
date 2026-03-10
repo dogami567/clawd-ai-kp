@@ -237,6 +237,56 @@ test("traditional chargen can finish in one natural sentence after attribute rol
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
+test("traditional chargen can continue after an interruption and still lock into the formal opening", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+
+  const opened = handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  assert.equal(opened.ok, true);
+  assert.match(opened.reply, /职业先定成 记者/);
+
+  const interrupted = handleOneBotMessage(makeEvent("/aikp state"), { storageRoot });
+  assert.equal(interrupted.ok, true);
+  assert.match(interrupted.reply, /调查员：暂无/);
+
+  const finalized = handleOneBotMessage(makeEvent("自动分配"), { storageRoot, randomInt: () => 3 });
+  assert.equal(finalized.ok, true);
+  assert.match(finalized.reply, /传统随机车卡 已经给你落好了/);
+  assert.match(finalized.reply, /先别急着开场/);
+
+  handleOneBotMessage(makeEvent("默认继续"), { storageRoot, randomInt: () => 3 });
+  handleOneBotMessage(makeEvent("默认继续"), { storageRoot, randomInt: () => 3 });
+  const locked = handleOneBotMessage(makeEvent("锁卡"), { storageRoot, randomInt: () => 3 });
+  assert.equal(locked.ok, true);
+  assert.match(locked.reply, /前情：/);
+  assert.match(locked.reply, /门一推开/);
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("locking a traditional card sends briefing once and the first scene action does not replay it", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  handleOneBotMessage(makeEvent("/aikp roll journalist"), { storageRoot, randomInt: () => 3 });
+  handleOneBotMessage(makeEvent("自动分配"), { storageRoot, randomInt: () => 3 });
+  handleOneBotMessage(makeEvent("默认继续"), { storageRoot, randomInt: () => 3 });
+  handleOneBotMessage(makeEvent("默认继续"), { storageRoot, randomInt: () => 3 });
+  const locked = handleOneBotMessage(makeEvent("锁卡"), { storageRoot, randomInt: () => 3 });
+  assert.equal(locked.ok, true);
+  assert.match(locked.reply, /前情：/);
+  assert.match(locked.reply, /门一推开/);
+
+  const firstAction = handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), {
+    storageRoot,
+    randomInt: () => 28
+  });
+  assert.equal(firstAction.ok, true);
+  assert.doesNotMatch(firstAction.reply, /前情：/);
+  assert.doesNotMatch(firstAction.reply, /门一推开/);
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
 test("multiplayer chargen drafts stay isolated by user id", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   selectDefaultStoryPack(storageRoot);
