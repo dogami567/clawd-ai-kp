@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } = require("fs");
 const { join } = require("path");
 const { tmpdir } = require("os");
-const { handleOneBotMessage, buildConversationKey } = require("./single-session");
+const { handleOneBotMessage, buildConversationKey, getKpRuntimePrompt } = require("./single-session");
 
 function makeEvent(message, overrides = {}) {
   return {
@@ -27,6 +27,13 @@ function selectDefaultStoryPack(storageRoot) {
   return handleOneBotMessage(makeEvent("/aikp pack old-church-arc-pack"), { storageRoot });
 }
 
+function lockCurrentInvestigator(storageRoot, randomInt = () => 3) {
+  const profile = handleOneBotMessage(makeEvent("默认继续"), { storageRoot, randomInt });
+  const gear = handleOneBotMessage(makeEvent("默认继续"), { storageRoot, randomInt });
+  const locked = handleOneBotMessage(makeEvent("锁卡"), { storageRoot, randomInt });
+  return { profile, gear, locked };
+}
+
 function completeTraditionalInvestigator(storageRoot, options = {}) {
   const occupationKey = Object.prototype.hasOwnProperty.call(options, "occupationKey")
     ? options.occupationKey
@@ -36,12 +43,57 @@ function completeTraditionalInvestigator(storageRoot, options = {}) {
   const rollCommand = occupationKey ? `/aikp roll ${occupationKey}` : "/aikp roll";
   const opened = handleOneBotMessage(makeEvent(rollCommand), { storageRoot, randomInt });
   const finalized = handleOneBotMessage(makeEvent(skillReply), { storageRoot, randomInt });
-  return { opened, finalized };
+  const review = lockCurrentInvestigator(storageRoot, randomInt);
+  return { opened, finalized, ...review };
+}
+
+function makeQueuedRandomInt(values = [], fallback = 1) {
+  let index = 0;
+  return () => {
+    if (index < values.length) {
+      const nextValue = values[index];
+      index += 1;
+      return nextValue;
+    }
+    return fallback;
+  };
+}
+
+function prepareQuickfireInvestigator(storageRoot, occupationKey = "journalist") {
+  selectDefaultStoryPack(storageRoot);
+  const started = handleOneBotMessage(makeEvent(`/aikp quickfire ${occupationKey}`), {
+    storageRoot,
+    randomInt: () => 0
+  });
+  assert.equal(started.ok, true);
+  return started;
+}
+
+function resolveFailedPersuade(storageRoot, overrides = {}) {
+  const pending = handleOneBotMessage(
+    makeEvent("我想走说服，找守墓人聊聊钟声", overrides),
+    { storageRoot, randomInt: () => 98 }
+  );
+  assert.equal(pending.ok, false);
+  assert.match(pending.reply, /你现在可以这么选：/);
+  const accepted = handleOneBotMessage(
+    makeEvent("接受当前结果", overrides),
+    { storageRoot, randomInt: () => 98 }
+  );
+  return { pending, accepted };
 }
 
 test("builds stable onebot conversation key", () => {
   assert.equal(buildConversationKey(makeEvent("hi")), "onebot-group-95270001");
   assert.equal(buildConversationKey({ user_id: 123, message: "hi" }), "onebot-dm-123");
+});
+
+test("kp runtime prompt bans templated rule-speak and spoiler-y outro habits", () => {
+  const prompt = getKpRuntimePrompt();
+  assert.match(prompt, /请使用自然、精简的日常口语/);
+  assert.match(prompt, /绝对禁止使用以下词汇和句式/);
+  assert.match(prompt, /不要生成任何开头寒暄和结尾总结/);
+  assert.match(prompt, /拓展不能带剧透内容/);
 });
 
 test("start reply prompts players to pick a story pack before opening scene text", () => {
@@ -103,7 +155,8 @@ test("story pack selection switches session into prestart lobby without dumping 
   const result = handleOneBotMessage(makeEvent("1"), { storageRoot });
   assert.equal(result.ok, true);
   assert.match(result.reply, /这次先跑《旧教堂异响》/);
-  assert.match(result.reply, /你现在还没车卡/);
+  assert.match(result.reply, /开团前先对一下边界/);
+  assert.match(result.reply, /开始建卡/);
   assert.doesNotMatch(result.reply, /门一推开/);
   rmSync(storageRoot, { recursive: true, force: true });
 });
@@ -114,7 +167,20 @@ test("natural language can pick a story pack with a loose referential phrase", (
   const result = handleOneBotMessage(makeEvent("旧教堂那个就行"), { storageRoot });
   assert.equal(result.ok, true);
   assert.match(result.reply, /这次先跑《旧教堂异响》/);
-  assert.match(result.reply, /你现在还没车卡/);
+  assert.match(result.reply, /开团前先对一下边界/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("same-group story pack choice stays group-shared", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  handleOneBotMessage(makeEvent("我想跑团"), { storageRoot });
+  const result = handleOneBotMessage(
+    makeEvent("旧教堂那个就行", { user_id: 9527, sender: { nickname: "阿青" } }),
+    { storageRoot }
+  );
+  assert.equal(result.ok, true);
+  assert.match(result.reply, /这次先跑《旧教堂异响》/);
+  assert.match(result.reply, /开团前先对一下边界/);
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
@@ -130,8 +196,8 @@ test("first traditional chargen after story pack selection waits for skill choic
   const result = handleOneBotMessage(makeEvent("自动分配"), { storageRoot, randomInt: () => 3 });
   assert.equal(result.ok, true);
   assert.match(result.reply, /传统随机车卡/);
-  assert.match(result.reply, /当前绑定调查员：dogami/);
-  assert.match(result.reply, /门一推开/);
+  assert.match(result.reply, /先别急着开场/);
+  assert.doesNotMatch(result.reply, /门一推开/);
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
@@ -146,6 +212,55 @@ test("traditional chargen can finish in one natural sentence after attribute rol
   assert.match(finalized.reply, /传统随机车卡 已经给你落好了/);
   assert.match(finalized.reply, /这次我按信用评级 20 来配职业面/);
   assert.match(finalized.reply, /Spot Hidden|Library Use|Psychology|Persuade/);
+  assert.match(finalized.reply, /先别急着开场/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("multiplayer chargen drafts stay isolated by user id", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+
+  const aStart = handleOneBotMessage(makeEvent("开始建卡"), { storageRoot, randomInt: () => 3 });
+  assert.equal(aStart.ok, true);
+  assert.match(aStart.reply, /下一步先定职业/);
+
+  const bWrongFollowUp = handleOneBotMessage(
+    makeEvent("默认继续", { user_id: 9527, sender: { nickname: "阿青" } }),
+    { storageRoot, randomInt: () => 3 }
+  );
+  assert.equal(bWrongFollowUp.ok, false);
+  assert.match(bWrongFollowUp.reply, /你还没车卡/);
+
+  const aOccupation = handleOneBotMessage(makeEvent("记者"), { storageRoot, randomInt: () => 3 });
+  assert.equal(aOccupation.ok, true);
+  assert.match(aOccupation.reply, /职业先定成 记者/);
+
+  const bStart = handleOneBotMessage(
+    makeEvent("开始建卡", { user_id: 9527, sender: { nickname: "阿青" } }),
+    { storageRoot, randomInt: () => 3 }
+  );
+  assert.equal(bStart.ok, true);
+  assert.match(bStart.reply, /下一步先定职业/);
+
+  const bOccupation = handleOneBotMessage(
+    makeEvent("医生", { user_id: 9527, sender: { nickname: "阿青" } }),
+    { storageRoot, randomInt: () => 3 }
+  );
+  assert.equal(bOccupation.ok, true);
+  assert.match(bOccupation.reply, /职业先定成 医生/);
+
+  const aFinalize = handleOneBotMessage(makeEvent("自动分配"), { storageRoot, randomInt: () => 3 });
+  assert.equal(aFinalize.ok, true);
+  assert.match(aFinalize.reply, /传统随机车卡 已经给你落好了/);
+  assert.match(aFinalize.reply, /记者/);
+
+  const bFinalize = handleOneBotMessage(
+    makeEvent("自动分配", { user_id: 9527, sender: { nickname: "阿青" } }),
+    { storageRoot, randomInt: () => 3 }
+  );
+  assert.equal(bFinalize.ok, true);
+  assert.match(bFinalize.reply, /传统随机车卡 已经给你落好了/);
+  assert.match(bFinalize.reply, /医生/);
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
@@ -159,10 +274,10 @@ test("natural language can quickfire chargen with chinese occupation", () => {
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
-test("party-roll can batch roll all known users", () => {
+test("party-roll can batch roll all joined party members", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
-  handleOneBotMessage(makeEvent("hello"), { storageRoot });
-  handleOneBotMessage(makeEvent("hello", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join"), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
   const result = handleOneBotMessage(makeEvent("/aikp party-roll journalist"), { storageRoot, randomInt: () => 3 });
   assert.equal(result.ok, true);
   assert.match(result.reply, /批量做了 传统随机车卡/);
@@ -173,8 +288,8 @@ test("party-roll can batch roll all known users", () => {
 
 test("natural language can batch roll traditional investigators with visible attribute breakdown", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
-  handleOneBotMessage(makeEvent("hello"), { storageRoot });
-  handleOneBotMessage(makeEvent("hello", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join"), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
   const result = handleOneBotMessage(makeEvent("我想一次全车完卡，角色选记者"), { storageRoot, randomInt: () => 3 });
   assert.equal(result.ok, true);
   assert.match(result.reply, /批量做了 传统随机车卡/);
@@ -208,14 +323,266 @@ test("rolled investigator can route old church natural language into scene actio
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
-test("open checks show roll and target in player-visible format", () => {
+test("ambiguous social actions pause for player skill choice before rolling", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   selectDefaultStoryPack(storageRoot);
   completeTraditionalInvestigator(storageRoot);
   const result = handleOneBotMessage(makeEvent("我去找守墓人聊聊钟声"), { storageRoot, randomInt: () => 28 });
+  assert.equal(result.ok, false);
+  assert.match(result.reply, /这句我先不替你直接判/);
+  assert.match(result.reply, /心理学/);
+  assert.match(result.reply, /说服/);
+  assert.doesNotMatch(result.reply, /投掷：28/);
+
+  const followUp = handleOneBotMessage(makeEvent("走说服"), { storageRoot, randomInt: () => 8 });
+  assert.equal(followUp.ok, true);
+  assert.match(followUp.reply, /投掷：8（目标 \d+，/);
+  assert.doesNotMatch(followUp.reply, /检定：Persuade 8\//);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("same-group scene method choice stays bound to the original player", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  handleOneBotMessage(makeEvent("/aikp join"), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp party-roll journalist"), { storageRoot, randomInt: () => 3 });
+
+  const prompt = handleOneBotMessage(makeEvent("我去找守墓人聊聊钟声"), { storageRoot, randomInt: () => 28 });
+  assert.equal(prompt.ok, false);
+  assert.match(prompt.reply, /这句我先不替你直接判/);
+
+  const hijacked = handleOneBotMessage(
+    makeEvent("走说服", { user_id: 9527, sender: { nickname: "阿青" } }),
+    { storageRoot, randomInt: () => 8 }
+  );
+  assert.equal(hijacked.ok, false);
+  assert.match(hijacked.reply, /先等 dogami 选走法/);
+  assert.doesNotMatch(hijacked.reply, /投掷：8/);
+
+  const resolved = handleOneBotMessage(makeEvent("走说服"), { storageRoot, randomInt: () => 8 });
+  assert.equal(resolved.ok, true);
+  assert.match(resolved.reply, /投掷：8（目标 \d+，/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("same-group off-spotlight action is blocked without explicit handoff", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  handleOneBotMessage(makeEvent("/aikp join"), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp party-roll journalist"), { storageRoot, randomInt: () => 3 });
+
+  const blocked = handleOneBotMessage(
+    makeEvent("我借着手电去看祭坛背后的刮痕", { user_id: 9527, sender: { nickname: "阿青" } }),
+    { storageRoot, randomInt: () => 28 }
+  );
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.reply, /当前 spotlight 还在 dogami/);
+  assert.match(blocked.reply, /切我|我打断一下/);
+  assert.doesNotMatch(blocked.reply, /暗骰：Spot Hidden/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("same-group player can explicitly claim spotlight before acting", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  handleOneBotMessage(makeEvent("/aikp join"), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp party-roll journalist"), { storageRoot, randomInt: () => 3 });
+
+  const acted = handleOneBotMessage(
+    makeEvent("切我，我借着手电去看祭坛背后的刮痕", { user_id: 9527, sender: { nickname: "阿青" } }),
+    { storageRoot, randomInt: () => 28 }
+  );
+  assert.equal(acted.ok, true);
+  assert.match(acted.reply, /spotlight 切到 阿青/);
+  assert.match(acted.reply, /暗骰：Spot Hidden/);
+
+  const who = handleOneBotMessage(makeEvent("/aikp who"), { storageRoot });
+  assert.equal(who.ok, true);
+  assert.match(who.reply, /dogami/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("group spotlight auto-advances after a resolved action", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  handleOneBotMessage(makeEvent("/aikp join"), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp party-roll journalist"), { storageRoot, randomInt: () => 3 });
+
+  const first = handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
+  assert.equal(first.ok, true);
+  assert.match(first.reply, /当前 spotlight 还在 阿青|阿青 这边/);
+
+  const afterFirst = handleOneBotMessage(makeEvent("/aikp who"), { storageRoot });
+  assert.equal(afterFirst.ok, true);
+  assert.match(afterFirst.reply, /阿青/);
+
+  const second = handleOneBotMessage(
+    makeEvent("我借着手电去看祭坛背后的刮痕", { user_id: 9527, sender: { nickname: "阿青" } }),
+    { storageRoot, randomInt: () => 28 }
+  );
+  assert.equal(second.ok, true);
+  assert.match(second.reply, /暗骰：Spot Hidden/);
+
+  const afterSecond = handleOneBotMessage(makeEvent("/aikp who"), { storageRoot });
+  assert.equal(afterSecond.ok, true);
+  assert.match(afterSecond.reply, /dogami/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("group soft time cues the next actor after time-consuming resolution", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  handleOneBotMessage(makeEvent("/aikp join"), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp party-roll journalist"), { storageRoot, randomInt: () => 3 });
+
+  const { accepted } = resolveFailedPersuade(storageRoot);
+  assert.equal(accepted.ok, true);
+  assert.match(accepted.reply, /时间 \+5/);
+  assert.match(accepted.reply, /阿青 这边也一起过去了 5 分钟/);
+
+  const who = handleOneBotMessage(makeEvent("/aikp who"), { storageRoot });
+  assert.equal(who.ok, true);
+  assert.match(who.reply, /阿青/);
+
+  const state = handleOneBotMessage(makeEvent("/aikp state"), { storageRoot });
+  assert.equal(state.ok, true);
+  assert.match(state.reply, /时间：5 分钟/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("group soft time stays incremental across two players", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  handleOneBotMessage(makeEvent("/aikp join"), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp party-roll journalist"), { storageRoot, randomInt: () => 3 });
+
+  const first = resolveFailedPersuade(storageRoot);
+  assert.equal(first.accepted.ok, true);
+  assert.match(first.accepted.reply, /阿青 这边也一起过去了 5 分钟/);
+
+  const second = resolveFailedPersuade(storageRoot, { user_id: 9527, sender: { nickname: "阿青" } });
+  assert.equal(second.accepted.ok, true);
+  assert.match(second.accepted.reply, /dogami 这边也一起过去了 5 分钟/);
+  assert.doesNotMatch(second.accepted.reply, /dogami 这边也一起过去了 10 分钟/);
+
+  const state = handleOneBotMessage(makeEvent("/aikp state"), { storageRoot });
+  assert.equal(state.ok, true);
+  assert.match(state.reply, /时间：10 分钟/);
+
+  const who = handleOneBotMessage(makeEvent("/aikp who"), { storageRoot });
+  assert.equal(who.ok, true);
+  assert.match(who.reply, /dogami/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("party panel keeps third player's pending soft time visible", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  handleOneBotMessage(makeEvent("/aikp join"), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join", { user_id: 9528, sender: { nickname: "老周" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp party-roll journalist"), { storageRoot, randomInt: () => 3 });
+
+  const first = resolveFailedPersuade(storageRoot);
+  assert.equal(first.accepted.ok, true);
+
+  const party = handleOneBotMessage(makeEvent("/aikp party"), { storageRoot });
+  assert.equal(party.ok, true);
+  assert.match(party.reply, /老周.*待同步 \+5 分钟/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("explicitly chosen social methods can resolve immediately", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  completeTraditionalInvestigator(storageRoot);
+  const result = handleOneBotMessage(makeEvent("我想走说服，找守墓人聊聊钟声"), { storageRoot, randomInt: () => 8 });
   assert.equal(result.ok, true);
-  assert.match(result.reply, /投掷：28（目标 \d+，/);
-  assert.doesNotMatch(result.reply, /检定：Persuade 28\//);
+  assert.match(result.reply, /投掷：8（目标 \d+，/);
+  assert.doesNotMatch(result.reply, /这句我先不替你直接判/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("failed checks offer accept push and luck choices", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  completeTraditionalInvestigator(storageRoot);
+  const result = handleOneBotMessage(makeEvent("我想走说服，找守墓人聊聊钟声"), { storageRoot, randomInt: () => 28 });
+  assert.equal(result.ok, false);
+  assert.match(result.reply, /你现在可以这么选：/);
+  assert.match(result.reply, /接受当前结果/);
+  assert.match(result.reply, /推骰再试/);
+  assert.match(result.reply, /花幸运/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("same-group post-check choice stays bound to the original player", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  handleOneBotMessage(makeEvent("/aikp join"), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp party-roll journalist"), { storageRoot, randomInt: () => 3 });
+
+  const failed = handleOneBotMessage(makeEvent("我想走说服，找守墓人聊聊钟声"), { storageRoot, randomInt: () => 28 });
+  assert.equal(failed.ok, false);
+  assert.match(failed.reply, /你现在可以这么选：/);
+
+  const hijacked = handleOneBotMessage(
+    makeEvent("花幸运", { user_id: 9527, sender: { nickname: "阿青" } }),
+    { storageRoot, randomInt: () => 28 }
+  );
+  assert.equal(hijacked.ok, false);
+  assert.match(hijacked.reply, /先等 dogami 决定这次检定怎么收/);
+  assert.doesNotMatch(hijacked.reply, /投掷：\d+（目标 \d+，/);
+
+  const resolved = handleOneBotMessage(makeEvent("花幸运"), { storageRoot, randomInt: () => 28 });
+  assert.equal(resolved.ok, true);
+  assert.match(resolved.reply, /投掷：\d+（目标 \d+，/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("accepting a failed check continues without reopening the same choice prompt", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  completeTraditionalInvestigator(storageRoot);
+  handleOneBotMessage(makeEvent("我想走说服，找守墓人聊聊钟声"), { storageRoot, randomInt: () => 28 });
+  const accepted = handleOneBotMessage(makeEvent("接受"), { storageRoot, randomInt: () => 28 });
+  assert.equal(accepted.ok, true);
+  assert.match(accepted.reply, /投掷：28（目标 \d+，/);
+  assert.doesNotMatch(accepted.reply, /你现在可以这么选：/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("pushing a failed check rerolls the same action", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  completeTraditionalInvestigator(storageRoot);
+  handleOneBotMessage(makeEvent("我想走说服，找守墓人聊聊钟声"), { storageRoot, randomInt: () => 28 });
+  const pushed = handleOneBotMessage(makeEvent("推骰"), { storageRoot, randomInt: () => 8 });
+  assert.equal(pushed.ok, true);
+  assert.match(pushed.reply, /投掷：8（目标 \d+，/);
+  assert.doesNotMatch(pushed.reply, /你现在可以这么选：/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("spending luck upgrades the failed check and deducts luck", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  completeTraditionalInvestigator(storageRoot);
+  const failed = handleOneBotMessage(makeEvent("我想走说服，找守墓人聊聊钟声"), { storageRoot, randomInt: () => 28 });
+  const luckBefore = Object.values(failed.sessionState.investigators)[0].resources.luck;
+  const luckResult = handleOneBotMessage(makeEvent("花幸运"), { storageRoot, randomInt: () => 28 });
+  const luckAfter = Object.values(luckResult.sessionState.investigators)[0].resources.luck;
+  assert.equal(luckResult.ok, true);
+  assert.match(luckResult.reply, /投掷：\d+（目标 \d+，/);
+  assert.doesNotMatch(luckResult.reply, /你现在可以这么选：/);
+  assert.ok(luckAfter < luckBefore);
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
@@ -304,12 +671,12 @@ test("scene and recap commands show environment and stage summary", () => {
 
 test("party command shows party panel and current focus", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
-  handleOneBotMessage(makeEvent("hello"), { storageRoot });
-  handleOneBotMessage(makeEvent("hello", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join"), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
   handleOneBotMessage(makeEvent("/aikp party-roll journalist"), { storageRoot, randomInt: () => 3 });
   const result = handleOneBotMessage(makeEvent("/aikp party"), { storageRoot });
   assert.equal(result.ok, true);
-  assert.match(result.reply, /队伍面板｜第 1 轮/);
+  assert.match(result.reply, /队伍面板｜.*第 1 轮/);
   assert.match(result.reply, /👉/);
   assert.match(result.reply, /dogami/);
   assert.match(result.reply, /阿青/);
@@ -338,14 +705,29 @@ test("returns help command text", () => {
   assert.equal(result.ok, true);
   assert.match(result.reply, /AI-KP 可用指令/);
   assert.match(result.reply, /party-roll/);
+  assert.match(result.reply, /group-luck/);
   assert.match(result.reply, /focus/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("group luck command uses the lowest party luck", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  handleOneBotMessage(makeEvent("/aikp join"), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp party-roll journalist"), { storageRoot, randomInt: () => 3 });
+  const result = handleOneBotMessage(makeEvent("/aikp group-luck"), { storageRoot, randomInt: () => 42 });
+  assert.equal(result.ok, true);
+  assert.match(result.reply, /group Luck/);
+  assert.match(result.reply, /最低 Luck/);
+  assert.match(result.reply, /投掷：42（目标 45，regular）/);
+  assert.match(result.reply, /幸运检定过了/);
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
 test("focus and next commands switch current actor", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
-  handleOneBotMessage(makeEvent("hello"), { storageRoot });
-  handleOneBotMessage(makeEvent("hello", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join"), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
   handleOneBotMessage(makeEvent("/aikp party-roll journalist"), { storageRoot, randomInt: () => 3 });
   const focus = handleOneBotMessage(makeEvent("/aikp focus 阿青"), { storageRoot });
   assert.equal(focus.ok, true);
@@ -356,6 +738,93 @@ test("focus and next commands switch current actor", () => {
   const next = handleOneBotMessage(makeEvent("/aikp next"), { storageRoot });
   assert.equal(next.ok, true);
   assert.doesNotMatch(next.reply, /阿青（第 1 轮）$/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("locked party blocks late joiners from slipping into chargen", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  handleOneBotMessage(makeEvent("/aikp join"), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp lock-party"), { storageRoot });
+
+  const lateJoin = handleOneBotMessage(
+    makeEvent("开始建卡", { user_id: 4242, sender: { nickname: "路人" } }),
+    { storageRoot, randomInt: () => 3 }
+  );
+  assert.equal(lateJoin.ok, true);
+  assert.match(lateJoin.reply, /名单已经先锁住了|名单已经锁了/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("outsiders cannot control shared group session with commands", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  handleOneBotMessage(makeEvent("/aikp join"), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp party-roll journalist"), { storageRoot, randomInt: () => 3 });
+
+  const focusBlocked = handleOneBotMessage(
+    makeEvent("/aikp focus 阿青", { user_id: 4242, sender: { nickname: "路人" } }),
+    { storageRoot }
+  );
+  assert.equal(focusBlocked.ok, true);
+  assert.match(focusBlocked.reply, /先让场内玩家来定/);
+  assert.match(focusBlocked.reply, /切 spotlight/);
+
+  const newBlocked = handleOneBotMessage(
+    makeEvent("/aikp new", { user_id: 4242, sender: { nickname: "路人" } }),
+    { storageRoot }
+  );
+  assert.equal(newBlocked.ok, true);
+  assert.match(newBlocked.reply, /先让场内玩家来定/);
+  assert.match(newBlocked.reply, /新开跑团线/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("locked party lets existing investigators auto-rejoin on their next action", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  handleOneBotMessage(makeEvent("/aikp join"), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join", { user_id: 9527, sender: { nickname: "阿青" } }), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp party-roll journalist"), { storageRoot, randomInt: () => 3 });
+  handleOneBotMessage(makeEvent("/aikp lock-party"), { storageRoot });
+
+  const left = handleOneBotMessage(
+    makeEvent("/aikp leave", { user_id: 9527, sender: { nickname: "阿青" } }),
+    { storageRoot }
+  );
+  assert.equal(left.ok, true);
+  assert.match(left.reply, /移出来/);
+
+  const acted = handleOneBotMessage(
+    makeEvent("切我，我借着手电去看祭坛背后的刮痕", { user_id: 9527, sender: { nickname: "阿青" } }),
+    { storageRoot, randomInt: () => 28 }
+  );
+  assert.equal(acted.ok, true);
+  assert.match(acted.reply, /spotlight 切到 阿青/);
+  assert.match(acted.reply, /暗骰：Spot Hidden/);
+
+  const party = handleOneBotMessage(makeEvent("/aikp party"), { storageRoot });
+  assert.equal(party.ok, true);
+  assert.match(party.reply, /阿青/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("outsiders cannot trigger old-save flow through natural language start", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  completeTraditionalInvestigator(storageRoot);
+  handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
+  handleOneBotMessage(makeEvent("先不跑了"), { storageRoot });
+
+  const blocked = handleOneBotMessage(
+    makeEvent("我想跑团", { user_id: 4242, sender: { nickname: "路人" } }),
+    { storageRoot }
+  );
+  assert.equal(blocked.ok, true);
+  assert.match(blocked.reply, /先让场内玩家来定/);
+  assert.match(blocked.reply, /改旧档状态/);
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
@@ -466,6 +935,31 @@ test("start prompts to resume or open a new line when an old save exists", () =>
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
+test("same-group resume choice stays bound to the requesting player", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  completeTraditionalInvestigator(storageRoot);
+  handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
+  handleOneBotMessage(makeEvent("先不跑了"), { storageRoot });
+
+  const prompt = handleOneBotMessage(makeEvent("我想跑团"), { storageRoot });
+  assert.equal(prompt.ok, true);
+  assert.match(prompt.reply, /旧档/);
+
+  const hijacked = handleOneBotMessage(
+    makeEvent("新开", { user_id: 9527, sender: { nickname: "阿青" } }),
+    { storageRoot }
+  );
+  assert.equal(hijacked.ok, true);
+  assert.match(hijacked.reply, /先等 dogami 拍板旧档/);
+
+  const resumed = handleOneBotMessage(makeEvent("续上"), { storageRoot });
+  assert.equal(resumed.ok, true);
+  assert.match(resumed.reply, /沿着这条继续|接回来了/);
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
 test("new line archives current run and resume can restore the archived save", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   const conversationKey = buildConversationKey(makeEvent("x"));
@@ -496,6 +990,157 @@ test("new line archives current run and resume can restore the archived save", (
 
   const stateAfterResume = handleOneBotMessage(makeEvent("/aikp state"), { storageRoot });
   assert.match(stateAfterResume.reply, /时间：5 分钟/);
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("delete command can remove an archived save after confirmation", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  const conversationKey = buildConversationKey(makeEvent("x"));
+  const archiveRoot = join(storageRoot, "archives", conversationKey);
+
+  selectDefaultStoryPack(storageRoot);
+  completeTraditionalInvestigator(storageRoot);
+  handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
+  handleOneBotMessage(makeEvent("/aikp new"), { storageRoot });
+
+  const saves = handleOneBotMessage(makeEvent("/aikp saves"), { storageRoot });
+  const saveId = saves.reply.match(/save-\d{4}-\d+/)?.[0];
+  assert.ok(saveId);
+  assert.equal(readdirSync(archiveRoot).length, 1);
+
+  const prompt = handleOneBotMessage(makeEvent(`/aikp delete ${saveId}`), { storageRoot });
+  assert.equal(prompt.ok, true);
+  assert.match(prompt.reply, /你要删的是这条历史归档/);
+  assert.match(prompt.reply, new RegExp(saveId));
+
+  const deleted = handleOneBotMessage(makeEvent("确认删除"), { storageRoot });
+  assert.equal(deleted.ok, true);
+  assert.match(deleted.reply, /已经删掉了/);
+  assert.equal(existsSync(join(archiveRoot, saveId)), false);
+
+  const savesAfterDelete = handleOneBotMessage(makeEvent("/aikp saves"), { storageRoot });
+  assert.doesNotMatch(savesAfterDelete.reply, new RegExp(saveId));
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("same-group delete confirmation stays bound to the requesting player", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  const conversationKey = buildConversationKey(makeEvent("x"));
+  const archiveRoot = join(storageRoot, "archives", conversationKey);
+
+  selectDefaultStoryPack(storageRoot);
+  completeTraditionalInvestigator(storageRoot);
+  handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
+  handleOneBotMessage(makeEvent("/aikp new"), { storageRoot });
+
+  const saves = handleOneBotMessage(makeEvent("/aikp saves"), { storageRoot });
+  const saveId = saves.reply.match(/save-\d{4}-\d+/)?.[0];
+  assert.ok(saveId);
+
+  const prompt = handleOneBotMessage(makeEvent(`/aikp delete ${saveId}`), { storageRoot });
+  assert.equal(prompt.ok, true);
+  assert.match(prompt.reply, new RegExp(saveId));
+
+  const hijacked = handleOneBotMessage(
+    makeEvent("确认删除", { user_id: 9527, sender: { nickname: "阿青" } }),
+    { storageRoot }
+  );
+  assert.equal(hijacked.ok, true);
+  assert.match(hijacked.reply, /先等 dogami 确认删档/);
+  assert.equal(existsSync(join(archiveRoot, saveId)), true);
+
+  const deleted = handleOneBotMessage(makeEvent("确认删除"), { storageRoot });
+  assert.equal(deleted.ok, true);
+  assert.match(deleted.reply, /已经删掉了/);
+  assert.equal(existsSync(join(archiveRoot, saveId)), false);
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("combat commands update combat round and expose HP SAN in state and settlement", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  const opened = prepareQuickfireInvestigator(storageRoot);
+  const actorId = Object.keys(opened.sessionState.investigators)[0];
+  const beforeHp = opened.sessionState.investigators[actorId].resources.hp;
+
+  const started = handleOneBotMessage(makeEvent("/aikp combat start"), { storageRoot });
+  assert.equal(started.ok, true);
+  assert.match(started.reply, /战斗态/);
+  assert.match(started.reply, /战斗第 1 轮/);
+
+  const attack = handleOneBotMessage(makeEvent("/aikp combat attack fight_back"), {
+    storageRoot,
+    randomInt: makeQueuedRandomInt([98, 12, 2], 2)
+  });
+  assert.equal(attack.ok, true);
+  assert.match(attack.reply, /战斗第 1 轮/);
+  assert.match(attack.reply, /反击/);
+  assert.equal(attack.sessionState.scene.timeState.combatRound, 2);
+  assert.equal(attack.sessionState.investigators[actorId].resources.hp, beforeHp - 2);
+
+  const state = handleOneBotMessage(makeEvent("/aikp state"), { storageRoot });
+  assert.match(state.reply, /战斗：进行中｜第 2 轮/);
+  assert.match(state.reply, /HP \d+\/\d+ SAN \d+\/\d+/);
+
+  const settle = handleOneBotMessage(makeEvent("/aikp settle"), { storageRoot });
+  assert.equal(settle.ok, true);
+  assert.match(settle.reply, /战斗轮次：第 2 轮收口/);
+  assert.match(settle.reply, /调查员收尾/);
+  assert.match(settle.reply, /HP \d+\/\d+/);
+  assert.match(settle.reply, /SAN \d+\/\d+/);
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("san command handles success failure and survives resume", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  const opened = prepareQuickfireInvestigator(storageRoot);
+  const actorId = Object.keys(opened.sessionState.investigators)[0];
+  const beforeSan = opened.sessionState.investigators[actorId].resources.san;
+
+  const sanSuccess = handleOneBotMessage(makeEvent("/aikp san 0 1"), {
+    storageRoot,
+    randomInt: () => 1
+  });
+  assert.equal(sanSuccess.ok, true);
+  assert.match(sanSuccess.reply, /SAN 检定/);
+  assert.match(sanSuccess.reply, new RegExp(`SAN ${beforeSan}→${beforeSan}`));
+
+  const sanFailed = handleOneBotMessage(makeEvent("/aikp san 1 1d4"), {
+    storageRoot,
+    randomInt: makeQueuedRandomInt([4, 99], 99)
+  });
+  assert.equal(sanFailed.ok, true);
+  assert.match(sanFailed.reply, /SAN 检定/);
+  assert.match(sanFailed.reply, new RegExp(`SAN ${beforeSan}→${beforeSan - 4}`));
+
+  handleOneBotMessage(makeEvent("先不跑了"), { storageRoot });
+  const prompt = handleOneBotMessage(makeEvent("我想跑团"), { storageRoot });
+  assert.match(prompt.reply, /续上|新开/);
+
+  const resumed = handleOneBotMessage(makeEvent("续上"), { storageRoot });
+  assert.equal(resumed.ok, true);
+  assert.match(resumed.reply, /沿着这条继续|接回来了/);
+
+  const stateAfterResume = handleOneBotMessage(makeEvent("/aikp state"), { storageRoot });
+  assert.match(stateAfterResume.reply, new RegExp(`SAN ${beforeSan - 4}\\/`));
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("combat and san commands return bounded fallback guidance for invalid input", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  prepareQuickfireInvestigator(storageRoot);
+
+  const combatBeforeStart = handleOneBotMessage(makeEvent("/aikp combat attack"), { storageRoot });
+  assert.equal(combatBeforeStart.ok, true);
+  assert.match(combatBeforeStart.reply, /还没进战斗态/);
+
+  const invalidSan = handleOneBotMessage(makeEvent("/aikp san ???"), { storageRoot });
+  assert.equal(invalidSan.ok, true);
+  assert.match(invalidSan.reply, /成功\/失败两档损失/);
 
   rmSync(storageRoot, { recursive: true, force: true });
 });
