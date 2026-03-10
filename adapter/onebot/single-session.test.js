@@ -803,6 +803,46 @@ test("underchurch and missing-person chain supports manual advance and resume", 
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
+test("npc runtime persists across scene transition resume and settlement", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  completeTraditionalInvestigator(storageRoot);
+
+  const talked = handleOneBotMessage(makeEvent("我想跟守墓人聊聊钟声"), {
+    storageRoot,
+    randomInt: () => 8
+  });
+  assert.equal(talked.ok, false);
+  assert.match(talked.reply, /走心理学|走说服/);
+
+  const resolvedTalk = handleOneBotMessage(makeEvent("走说服"), {
+    storageRoot,
+    randomInt: () => 8
+  });
+  assert.equal(resolvedTalk.ok, true);
+
+  const advanced = handleOneBotMessage(makeEvent("/aikp advance take-key-evidence"), { storageRoot });
+  assert.equal(advanced.ok, true);
+  assert.match(advanced.reply, /bell-tower-followup/);
+
+  const snapshot = JSON.parse(readFileSync(getSessionFile(storageRoot), "utf8"));
+  const persistedNpc = snapshot.sessionState.scene.meta?.campaign?.runtime?.npcsById?.gravedigger;
+  assert.equal(Boolean(persistedNpc), true);
+  assert.match((persistedNpc.socialState?.flags || []).join(","), /reasoned_with/);
+  assert.equal(persistedNpc.socialState?.lastInteractionStyle, "persuade");
+
+  handleOneBotMessage(makeEvent("先不跑了"), { storageRoot });
+  handleOneBotMessage(makeEvent("我想跑团"), { storageRoot });
+  const resumed = handleOneBotMessage(makeEvent("续上"), { storageRoot });
+  assert.equal(resumed.ok, true);
+
+  const settle = handleOneBotMessage(makeEvent("/aikp settle"), { storageRoot });
+  assert.equal(settle.ok, true);
+  assert.match(settle.reply, /跨幕 NPC 后效：守墓人/);
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
 test("scene and recap commands show environment and stage summary", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   selectDefaultStoryPack(storageRoot);

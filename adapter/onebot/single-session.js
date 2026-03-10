@@ -20,6 +20,7 @@ const {
   formatCampaignSummary,
   getCurrentCampaign,
   transitionCampaignScene,
+  listCampaignRuntimeNpcAftermath,
   listEligibleHooks,
   autoAdvanceCampaign,
   loadStoryPackTemplate,
@@ -3801,6 +3802,13 @@ function formatSettlementReply(settlement, stateBundle = null) {
   }
   if (Array.isArray(settlement.summaryLines)) lines.push(...settlement.summaryLines);
   if (stateBundle) {
+    const runtimeNpcAftermath = listCampaignRuntimeNpcAftermath(stateBundle.sessionState)
+      .filter((npc) => npc.attitude !== "neutral" || npc.suspicion || npc.fear || npc.affinity || npc.obligation || npc.flags.length)
+      .filter((npc, index, collection) => collection.findIndex((entry) => entry.id === npc.id) === index)
+      .filter((npc) => !Array.isArray(settlement?.npcAftermath) || !settlement.npcAftermath.some((entry) => entry.id === npc.id));
+    if (runtimeNpcAftermath.length) {
+      lines.push(`跨幕 NPC 后效：${runtimeNpcAftermath.map((npc) => `${npc.name}[${npc.attitude}]`).join("、")}`);
+    }
     const investigatorLines = Object.values(stateBundle.sessionState?.investigators || {})
       .map((investigator) => formatInvestigatorStateLine(investigator, stateBundle.meta, { includeInventory: true }))
       .filter(Boolean);

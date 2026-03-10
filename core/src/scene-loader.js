@@ -36,14 +36,34 @@ function buildNpcRuntimeFromCard(card, overrides = {}) {
   };
 }
 
-function buildScenarioNpcs(npcRefs = []) {
+function mergePersistedNpcRuntime(baseNpc, persistedNpc = null) {
+  if (!persistedNpc || typeof persistedNpc !== "object") return baseNpc;
+  return {
+    ...baseNpc,
+    ...cloneJson(persistedNpc),
+    id: baseNpc.id,
+    name: persistedNpc.name || baseNpc.name,
+    status: persistedNpc.status || baseNpc.status,
+    items: Array.isArray(persistedNpc.items) ? [...persistedNpc.items] : baseNpc.items,
+    socialState: {
+      ...cloneJson(baseNpc.socialState || {}),
+      ...cloneJson(persistedNpc.socialState || {})
+    }
+  };
+}
+
+function buildScenarioNpcs(npcRefs = [], options = {}) {
+  const persistedNpcById = options?.campaignRuntime?.npcsById && typeof options.campaignRuntime.npcsById === "object"
+    ? options.campaignRuntime.npcsById
+    : {};
   return npcRefs.map((npcRef) => {
     const card = loadNpcCard(npcRef.id);
-    return buildNpcRuntimeFromCard(card, npcRef);
+    const baseNpc = buildNpcRuntimeFromCard(card, npcRef);
+    return mergePersistedNpcRuntime(baseNpc, persistedNpcById[baseNpc.id] || persistedNpcById[npcRef.id] || null);
   });
 }
 
-function applySceneTemplate(sessionState, template) {
+function applySceneTemplate(sessionState, template, options = {}) {
   sessionState.scene.sceneType = template.sceneType || sessionState.scene.sceneType;
   sessionState.scene.summary = template.summary || sessionState.scene.summary;
   sessionState.scene.location = template.location || sessionState.scene.location;
@@ -51,7 +71,7 @@ function applySceneTemplate(sessionState, template) {
   sessionState.scene.events = cloneJson(template.events || []);
   sessionState.scene.nextOptions = cloneJson(template.nextOptions || sessionState.scene.nextOptions);
   sessionState.scene.threats = cloneJson(template.threats || sessionState.scene.threats);
-  sessionState.scene.participants.npcs = buildScenarioNpcs(template.npcRefs || []);
+  sessionState.scene.participants.npcs = buildScenarioNpcs(template.npcRefs || [], options);
   sessionState.scene.meta = {
     ...(sessionState.scene.meta || {}),
     scenarioId: template.id,

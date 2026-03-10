@@ -27,7 +27,7 @@ const { WEAPON_TABLE, getWeaponProfile, buildCombatActionFromWeapon } = require(
 const { createSessionSnapshot, serializeSessionSnapshot, parseSessionSnapshot, saveSessionState, loadSessionState, loadSessionSnapshot } = require("./session-storage");
 const { validateInvestigatorCard, validateSceneState, validateCheckEvent, validateSessionState } = require("./schema-validation");
 const { loadSceneTemplate, buildNpcRuntimeFromCard, buildScenarioNpcs, applySceneTemplate, seedSessionFromScenario } = require("./scene-loader");
-const { loadCampaignTemplate, getCampaignScene, listCampaignHooks, buildCampaignMeta, attachCampaignMeta, getCurrentCampaign, transitionCampaignScene, evaluateHookConditions, listEligibleHooks, autoAdvanceCampaign, formatCampaignSummary } = require("./campaign-loader");
+const { loadCampaignTemplate, getCampaignScene, listCampaignHooks, buildCampaignMeta, ensureCampaignRuntime, attachCampaignMeta, getCurrentCampaign, transitionCampaignScene, recordCampaignRuntime, listCampaignRuntimeNpcAftermath, evaluateHookConditions, listEligibleHooks, autoAdvanceCampaign, formatCampaignSummary } = require("./campaign-loader");
 const { loadStoryPackTemplate, formatStoryPackSummary } = require("./story-pack-loader");
 const { validateCampaignTemplate, validateStoryPackTemplate } = require("./authoring-validation");
 const { importSceneMarkdown } = require("./scene-markdown-import");
@@ -89,9 +89,12 @@ module.exports = {
   getCampaignScene,
   listCampaignHooks,
   buildCampaignMeta,
+  ensureCampaignRuntime,
   attachCampaignMeta,
   getCurrentCampaign,
   transitionCampaignScene,
+  recordCampaignRuntime,
+  listCampaignRuntimeNpcAftermath,
   evaluateHookConditions,
   listEligibleHooks,
   autoAdvanceCampaign,
