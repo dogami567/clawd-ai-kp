@@ -49,7 +49,8 @@ const {
 const KP_RUNTIME_PROMPT = [
   "你现在是 AI 跑团的 KP，名字叫麦麦。",
   "语气可爱、口语化、轻一点，会自然带一点颜文字，但不要说教，也别端着像模板回复。",
-  "单次回复尽量控制在 200 字内；优先短句、轻度演绎，不要长段介绍，不要堆一串推荐。",
+  "单次回复尽量控制在 200 字内；优先短句、轻度演绎，不要长段介绍。",
+  "默认不要在行动结算后主动给一串推荐选项；只有玩家主动问、当前必须二选一，或流程真的卡住时，才给很短的 1-2 个选项。",
   "请使用自然、精简的日常口语与我对话，直接提供核心信息。绝对禁止使用以下词汇和句式：首先/其次/最后、综上所述、值得注意的是、深入探讨、赋能、释放潜力、画卷、至关重要、“这不仅是...更是...”。不要生成任何开头寒暄和结尾总结。可以给用户建议、拓展对话，但拓展不能带剧透内容。",
   "玩家描述动作时，不要直接脑补他们内心想法，也不要替他们先拍板技能。若动作可能对应多项技能，先用一句话给 1-2 个候选，比如“这步过侦查还是心理学？”也可以顺手提醒哪项更高。",
   "只有当玩家明确说“你决定”“默认”“自动分配”“你来选”时，你才替玩家选技能并继续落骰。",
@@ -3405,53 +3406,60 @@ function formatSceneBeat(sessionState) {
   const recentTriggeredEvent = [...(sessionState.scene?.events || [])].reverse().find((item) => item.triggered);
   const lines = [];
 
-  if (dangerLevel === "low") lines.push("场上此刻还没彻底炸开，但空气已经有点绷住了。");
-  if (dangerLevel === "medium") lines.push("场上已经开始起刺了，再多碰几下，后果会往外翻。");
-  if (dangerLevel === "high") lines.push("场面已经很紧，谁再往前硬顶，教堂这口气就要变脸了。");
-  if (dangerLevel === "extreme") lines.push("现在这地方已经快绷断了，下一步很可能直接出大动静。");
+  if (dangerLevel === "medium") lines.push("场上开始起刺了。再多碰几下就要翻。");
+  if (dangerLevel === "high") lines.push("场面已经很紧了，再硬顶就要变脸。");
+  if (dangerLevel === "extreme") lines.push("这地方快绷断了，下一步可能直接出大动静。");
 
   if (guardedNpcs.length) {
-    lines.push(`现在明显绷着的人有：${guardedNpcs.join("、")}。`);
+    lines.push(`${guardedNpcs.join("、")}明显更警觉了。`);
   }
 
   if (recentTriggeredEvent?.label) {
-    lines.push(`刚刚场里最新冒出来的是：${recentTriggeredEvent.label}。`);
+    lines.push(`场里新动静：${recentTriggeredEvent.label}。`);
   }
 
   return lines.join("\n");
 }
 
 function formatOptionCue(sessionState) {
-  const options = Array.isArray(sessionState.scene?.nextOptions) ? sessionState.scene.nextOptions : [];
-  if (!options.length) return null;
-  return `你们眼下最顺手的路有：${options.slice(0, 3).map((item) => item.label).join("、")}。`;
+  return null;
 }
 
 function formatSpotlightCue(stateBundle) {
   const turnState = ensureTurnState(stateBundle.meta);
+  if (!Array.isArray(turnState.actorOrder) || turnState.actorOrder.length < 2) return null;
   const currentActor = turnState.currentActorId ? stateBundle.sessionState.investigators[turnState.currentActorId] : null;
   if (!currentActor) return null;
-  return `当前 spotlight 还在 ${currentActor.name} 这边；想切人就用 "/aikp next" 或 "/aikp focus <名字>"。`;
+  return `现在还轮到 ${currentActor.name}。`;
+}
+
+function cleanReplyFragment(text) {
+  if (!text) return null;
+  return String(text)
+    .replace(/\s+null\s*$/g, "")
+    .trim() || null;
 }
 
 function formatTurnReply(result, extras = {}) {
   if (!result) return "这下我没接住，怪。";
   const parts = [];
-  const resolvedActionLine = formatResolvedActionResult(result);
+  const resolvedActionLine = cleanReplyFragment(formatResolvedActionResult(result));
   if (resolvedActionLine) parts.push(resolvedActionLine);
-  if (result.warningLine) parts.push(result.warningLine);
-  if (result.adjudicationBonusLine) parts.push(result.adjudicationBonusLine);
-  if (result.preRollLine) parts.push(result.preRollLine);
-  if (result.postRollLine) parts.push(result.postRollLine);
-  if (result.narrativeLine) parts.push(result.narrativeLine);
-  const checkResultLine = formatCheckResultLine(result.event);
+  if (result.warningLine) parts.push(cleanReplyFragment(result.warningLine));
+  if (result.adjudicationBonusLine) parts.push(cleanReplyFragment(result.adjudicationBonusLine));
+  if (result.preRollLine) parts.push(cleanReplyFragment(result.preRollLine));
+  if (result.postRollLine) parts.push(cleanReplyFragment(result.postRollLine));
+  const narrativeLine = cleanReplyFragment(result.narrativeLine);
+  if (narrativeLine) parts.push(narrativeLine);
+  const checkResultLine = cleanReplyFragment(formatCheckResultLine(result.event));
   if (checkResultLine) parts.push(checkResultLine);
-  if (extras.deltaSummary) parts.push(extras.deltaSummary);
-  if (extras.combatOrderLine) parts.push(extras.combatOrderLine);
-  if (extras.sceneBeat) parts.push(extras.sceneBeat);
-  if (result.event?.outcome?.nextPrompt) parts.push(result.event.outcome.nextPrompt);
-  if (extras.optionCue) parts.push(extras.optionCue);
-  if (extras.spotlightCue) parts.push(extras.spotlightCue);
+  if (extras.deltaSummary) parts.push(cleanReplyFragment(extras.deltaSummary));
+  if (extras.combatOrderLine) parts.push(cleanReplyFragment(extras.combatOrderLine));
+  if (extras.sceneBeat) parts.push(cleanReplyFragment(extras.sceneBeat));
+  const nextPrompt = cleanReplyFragment(result.event?.outcome?.nextPrompt);
+  if (nextPrompt && nextPrompt !== narrativeLine) parts.push(nextPrompt);
+  if (extras.optionCue) parts.push(cleanReplyFragment(extras.optionCue));
+  if (extras.spotlightCue) parts.push(cleanReplyFragment(extras.spotlightCue));
   return parts.filter(Boolean).join("\n");
 }
 
