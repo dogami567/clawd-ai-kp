@@ -1103,7 +1103,7 @@ test("combat commands update combat round and expose HP SAN in state and settlem
 
   const state = handleOneBotMessage(makeEvent("/aikp state"), { storageRoot });
   assert.match(state.reply, /战斗：进行中｜第 2 轮/);
-  assert.match(state.reply, /HP \d+\/\d+ SAN \d+\/\d+/);
+  assert.match(state.reply, /HP \d+\/\d+｜SAN \d+\/\d+/);
 
   const settle = handleOneBotMessage(makeEvent("/aikp settle"), { storageRoot });
   assert.equal(settle.ok, true);
@@ -1283,6 +1283,65 @@ test("combat current actor survives resume and different groups stay isolated", 
   assert.match(originalGroupWho.reply, /dogami/);
   const originalGroupParty = handleOneBotMessage(makeEvent("/aikp party"), { storageRoot });
   assert.match(originalGroupParty.reply, /阿青/);
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("state party npc and settlement panels surface wounds san thresholds inventory changes and survive resume", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  const opened = prepareQuickfireInvestigator(storageRoot);
+  const actorId = Object.keys(opened.sessionState.investigators)[0];
+
+  rewriteSession(storageRoot, (session) => {
+    const investigator = session.investigators[actorId];
+    investigator.resources.hp = 2;
+    investigator.resources.hpMax = 2;
+    investigator.resources.san = 20;
+    investigator.resources.sanMax = 20;
+    investigator.inventory = [...investigator.inventory, { name: "急救包", category: "tool", quantity: 1 }];
+  });
+
+  handleOneBotMessage(makeEvent("/aikp combat start"), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp combat attack fight_back"), {
+    storageRoot,
+    randomInt: makeQueuedRandomInt([98, 12, 2], 2)
+  });
+  handleOneBotMessage(makeEvent("/aikp san 1 5"), {
+    storageRoot,
+    randomInt: () => 99
+  });
+
+  const state = handleOneBotMessage(makeEvent("/aikp state"), { storageRoot });
+  assert.match(state.reply, /重大伤/);
+  assert.match(state.reply, /濒死/);
+  assert.match(state.reply, /临时异常/);
+  assert.match(state.reply, /长期异常/);
+  assert.match(state.reply, /急救包x1/);
+  assert.match(state.reply, /变动 .*急救包x1/);
+
+  const party = handleOneBotMessage(makeEvent("/aikp party"), { storageRoot });
+  assert.match(party.reply, /重大伤/);
+  assert.match(party.reply, /濒死/);
+  assert.match(party.reply, /急救包x1/);
+
+  const npcs = handleOneBotMessage(makeEvent("/aikp npcs"), { storageRoot });
+  assert.match(npcs.reply, /守墓人/);
+  assert.match(npcs.reply, /物品/);
+
+  handleOneBotMessage(makeEvent("先不跑了"), { storageRoot });
+  handleOneBotMessage(makeEvent("我想跑团"), { storageRoot });
+  handleOneBotMessage(makeEvent("续上"), { storageRoot });
+
+  const resumedState = handleOneBotMessage(makeEvent("/aikp state"), { storageRoot });
+  assert.match(resumedState.reply, /重大伤/);
+  assert.match(resumedState.reply, /临时异常/);
+  assert.match(resumedState.reply, /急救包x1/);
+
+  const settle = handleOneBotMessage(makeEvent("/aikp settle"), { storageRoot });
+  assert.match(settle.reply, /持续状态/);
+  assert.match(settle.reply, /重大伤/);
+  assert.match(settle.reply, /濒死/);
+  assert.match(settle.reply, /急救包x1/);
 
   rmSync(storageRoot, { recursive: true, force: true });
 });

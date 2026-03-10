@@ -377,6 +377,99 @@ function formatInventorySummary(investigator) {
   return items.map((item) => `${item.name}x${item.quantity || 1}`).join("、");
 }
 
+function ensureInventoryBaselineMap(meta) {
+  meta.inventoryBaselineByActorId =
+    meta.inventoryBaselineByActorId && typeof meta.inventoryBaselineByActorId === "object"
+      ? meta.inventoryBaselineByActorId
+      : {};
+  return meta.inventoryBaselineByActorId;
+}
+
+function syncInventoryBaseline(meta, investigator, options = {}) {
+  if (!meta || !investigator?.id) return;
+  const baselineMap = ensureInventoryBaselineMap(meta);
+  if (!options.force && Array.isArray(baselineMap[investigator.id])) return;
+  baselineMap[investigator.id] = cloneJson(normalizeInventoryItems(investigator.inventory || []));
+}
+
+function toInventoryCountMap(items = []) {
+  const map = new Map();
+  for (const item of normalizeInventoryItems(items)) {
+    const key = String(item.name || "").trim();
+    if (!key) continue;
+    map.set(key, Number(item.quantity || 1));
+  }
+  return map;
+}
+
+function formatInventoryDeltaSummary(meta, investigator) {
+  const baselineMap = ensureInventoryBaselineMap(meta || {});
+  const baselineItems = Array.isArray(baselineMap[investigator?.id]) ? baselineMap[investigator.id] : normalizeInventoryItems(investigator?.inventory || []);
+  const currentItems = normalizeInventoryItems(investigator?.inventory || []);
+  const beforeMap = toInventoryCountMap(baselineItems);
+  const afterMap = toInventoryCountMap(currentItems);
+  const changes = [];
+
+  for (const [name, quantity] of afterMap.entries()) {
+    const beforeQuantity = beforeMap.get(name);
+    if (beforeQuantity == null) {
+      changes.push(`+${name}x${quantity}`);
+      continue;
+    }
+    if (beforeQuantity !== quantity) {
+      changes.push(`${name} ${beforeQuantity}→${quantity}`);
+    }
+  }
+
+  for (const [name, quantity] of beforeMap.entries()) {
+    if (!afterMap.has(name)) {
+      changes.push(`-${name}x${quantity}`);
+    }
+  }
+
+  return changes.length ? changes.join("；") : null;
+}
+
+function formatInvestigatorConditionSummary(investigator) {
+  const labels = [];
+  const status = investigator?.status || {};
+  const conditions = Array.isArray(status.conditions) ? status.conditions : [];
+
+  if (status.majorWound) labels.push("重大伤");
+  if (conditions.includes("dying")) labels.push("濒死");
+  if (status.temporaryInsanity || conditions.includes("temporary_insanity")) labels.push("临时异常");
+  if (status.indefiniteInsanity || conditions.includes("indefinite_insanity")) labels.push("长期异常");
+
+  return labels.length ? [...new Set(labels)].join("、") : "正常";
+}
+
+function formatInvestigatorStateLine(investigator, meta = null, options = {}) {
+  if (!investigator) return null;
+  const bits = [
+    `${investigator.name}`,
+    `HP ${investigator.resources.hp}/${investigator.resources.hpMax}`,
+    `SAN ${investigator.resources.san}/${investigator.resources.sanMax}`
+  ];
+  const conditionText = formatInvestigatorConditionSummary(investigator);
+  if (conditionText !== "正常") {
+    bits.push(`状态 ${conditionText}`);
+  }
+  const temporaryEffects = Array.isArray(investigator?.status?.temporaryEffects) && investigator.status.temporaryEffects.length
+    ? investigator.status.temporaryEffects.join("、")
+    : null;
+  if (temporaryEffects && options.includeEffects !== false) {
+    bits.push(`后效 ${temporaryEffects}`);
+  }
+  if (options.includeInventory === true) {
+    bits.push(`携带 ${formatInventorySummary(investigator)}`);
+    const inventoryDelta = meta ? formatInventoryDeltaSummary(meta, investigator) : null;
+    if (inventoryDelta) {
+      bits.push(`变动 ${inventoryDelta}`);
+    }
+  }
+  return bits.join("｜");
+}
+
 function refreshInvestigatorComputedFields(investigator) {
   if (!investigator) return investigator;
   investigator.resources = calculateDerivedStats({
@@ -742,6 +835,7 @@ function ensureConversationControlState(meta) {
     meta.actorsByUserId && typeof meta.actorsByUserId === "object"
       ? meta.actorsByUserId
       : {};
+  ensureInventoryBaselineMap(meta);
   meta.knownUsers = Array.isArray(meta.knownUsers) ? meta.knownUsers : [];
   meta.archiveHistory = Array.isArray(meta.archiveHistory) ? meta.archiveHistory : [];
   const normalizePendingDraft = (draft) => {
@@ -2677,6 +2771,7 @@ function maybeHandleSpotlightConflict(text, event, stateBundle, actorResult) {
 
 function upsertInvestigatorForUser(event, stateBundle, investigator) {
   addInvestigator(stateBundle.sessionState, investigator);
+  syncInventoryBaseline(stateBundle.meta, investigator);
   stateBundle.meta.actorsByUserId[String(event.user_id || "guest")] = investigator.id;
   upsertPartyMember(stateBundle, event, {
     investigatorId: investigator.id,
@@ -2698,6 +2793,7 @@ function ensureActorForUser(event, stateBundle, options = {}) {
   const userId = String(event.user_id || "guest");
   const mappedActorId = stateBundle.meta.actorsByUserId[userId];
   if (mappedActorId && stateBundle.sessionState.investigators[mappedActorId]) {
+    syncInventoryBaseline(stateBundle.meta, stateBundle.sessionState.investigators[mappedActorId]);
     return { actorId: mappedActorId, created: false, investigator: stateBundle.sessionState.investigators[mappedActorId] };
   }
 
@@ -2719,9 +2815,9 @@ function formatStateSummary(sessionState, meta = {}) {
   const currentActorLag = currentActor ? formatSoftTimeLagTag({ meta, sessionState }, turnState.currentActorId) : null;
   const partyCount = listPartyMembers(meta).length;
   const partyMode = inferPartyMode(meta, sessionState) === "group" ? "多人" : "单人";
-  const investigatorBits = Object.values(sessionState.investigators || {}).map((investigator) => (
-    `${investigator.name} HP ${investigator.resources.hp}/${investigator.resources.hpMax} SAN ${investigator.resources.san}/${investigator.resources.sanMax}`
-  ));
+  const investigatorBits = Object.values(sessionState.investigators || {})
+    .map((investigator) => formatInvestigatorStateLine(investigator, meta, { includeInventory: true }))
+    .filter(Boolean);
   const lines = [
     `场景：${state.scene.summary || state.scene.location}`,
     `地点：${state.scene.location}`,
@@ -2770,7 +2866,15 @@ function formatPartySummary(stateBundle) {
     const extraBits = [];
     if (entry.softTimeLagMinutes > 0) extraBits.push(`待同步 +${entry.softTimeLagMinutes} 分钟`);
     if (entry.lastActionSummary) extraBits.push(`上次：${entry.lastActionSummary}`);
-    lines.push(`${marker} ${entry.userName}｜${entry.investigator.name}｜${entry.investigator.occupation}｜HP ${entry.investigator.resources.hp}｜SAN ${entry.investigator.resources.san}${extraBits.length ? `｜${extraBits.join("｜")}` : ""}`);
+    const conditionText = formatInvestigatorConditionSummary(entry.investigator);
+    if (conditionText !== "正常") extraBits.push(`状态 ${conditionText}`);
+    const inventoryDelta = formatInventoryDeltaSummary(stateBundle.meta, entry.investigator);
+    if (inventoryDelta) extraBits.push(`变动 ${inventoryDelta}`);
+    const temporaryEffects = Array.isArray(entry.investigator?.status?.temporaryEffects) && entry.investigator.status.temporaryEffects.length
+      ? entry.investigator.status.temporaryEffects.join("、")
+      : null;
+    if (temporaryEffects) extraBits.push(`后效 ${temporaryEffects}`);
+    lines.push(`${marker} ${entry.userName}｜${entry.investigator.name}｜${entry.investigator.occupation}｜HP ${entry.investigator.resources.hp}｜SAN ${entry.investigator.resources.san}｜携带 ${formatInventorySummary(entry.investigator)}${extraBits.length ? `｜${extraBits.join("｜")}` : ""}`);
   }
   if (isGroupConversation) {
     lines.push(`软时间：多人分头时我只在后台记时间，提醒到了你们给个合理解释就能继续，不会硬卡死。`);
@@ -2855,7 +2959,10 @@ function formatNpcPanel(sessionState) {
     if (npc.socialState?.fear) socialBits.push(`恐惧 ${npc.socialState.fear}`);
     if (npc.socialState?.affinity) socialBits.push(`亲近 ${npc.socialState.affinity}`);
     if (npc.socialState?.obligation) socialBits.push(`亏欠 ${npc.socialState.obligation}`);
-    lines.push(`- ${npc.name}｜态度 ${npc.attitude}｜trust ${npc.trust ?? 0}${socialBits.length ? `｜${socialBits.join(" / ")}` : ""}`);
+    const itemBits = Array.isArray(npc.items) && npc.items.length
+      ? `｜物品 ${npc.items.slice(0, 4).join("、")}`
+      : "";
+    lines.push(`- ${npc.name}｜态度 ${npc.attitude}｜trust ${npc.trust ?? 0}${socialBits.length ? `｜${socialBits.join(" / ")}` : ""}${itemBits}`);
   }
   return lines.join("\n");
 }
@@ -3687,12 +3794,21 @@ function formatHelpReply() {
   ].join("\n");
 }
 
-function formatSettlementReply(settlement) {
+function formatSettlementReply(settlement, stateBundle = null) {
   const lines = ["这轮先帮你收一下："];
   if (settlement?.timelineSummary?.combatRound > 0) {
     lines.push(`战斗轮次：第 ${settlement.timelineSummary.combatRound} 轮收口。`);
   }
   if (Array.isArray(settlement.summaryLines)) lines.push(...settlement.summaryLines);
+  if (stateBundle) {
+    const investigatorLines = Object.values(stateBundle.sessionState?.investigators || {})
+      .map((investigator) => formatInvestigatorStateLine(investigator, stateBundle.meta, { includeInventory: true }))
+      .filter(Boolean);
+    if (investigatorLines.length) {
+      lines.push("持续状态：");
+      lines.push(...investigatorLines.map((line) => `- ${line}`));
+    }
+  }
   lines.push(`事件数：${settlement.eventCount}`);
   return lines.join("\n");
 }
@@ -3811,6 +3927,7 @@ function runPartyRollCommand(event, stateBundle, mode, occupationKey, randomInt)
     const resolvedOccupation = occupationKey || existing?.occupationKey || "journalist";
     const bundle = createInvestigatorForMode(fakeEvent, mode, resolvedOccupation, randomInt);
     addInvestigator(stateBundle.sessionState, bundle.investigator);
+    syncInventoryBaseline(stateBundle.meta, bundle.investigator);
     stateBundle.meta.actorsByUserId[String(user.userId)] = bundle.investigator.id;
     stateBundle.meta.partyRosterByUserId[String(user.userId)] = {
       ...stateBundle.meta.partyRosterByUserId[String(user.userId)],
@@ -5485,7 +5602,7 @@ function handleCommand(text, event, stateBundle, actorResult, options = {}) {
     const settlement = settleSessionApi(stateBundle.sessionState);
     saveSessionApi(stateBundle.sessionState, stateBundle.layout.sessionFile, { meta: { conversationKey: stateBundle.layout.conversationKey } });
     return {
-      reply: formatSettlementReply(settlement),
+      reply: formatSettlementReply(settlement, stateBundle),
       operationEvents: [buildOperationEvent("session.settle", `${getSenderName(event)} 生成了结团摘要`, {
         userId: event.user_id != null ? String(event.user_id) : null,
         settlement: cloneJson(settlement)
