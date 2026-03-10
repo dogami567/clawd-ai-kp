@@ -1,0 +1,49 @@
+{
+  "id": "underchurch-reckoning",
+  "title": "钟下密室",
+  "opening": "钟楼底下那块被抹平的石边一撬开，下面的潮气立刻扑了出来。失踪者、人影、旧账页和那口不该再响的机关，这下全被挤进了同一处地方。",
+  "summary": "旧教堂线索正式收束到钟下密室，人命、证物与机关要在同一幕里做抉择。",
+  "location": "旧教堂钟楼底部 / 地下密室",
+  "sceneType": "investigation",
+  "threats": { "exposure": 2, "pressure": 4, "dangerLevel": "high" },
+  "atmosphere": {
+    "tone": "真相与后果同时压上来，已经没有纯侦查位了",
+    "smell": ["潮石灰", "旧铁锈", "灯油快烧尽的焦味"],
+    "sound": ["钟链偶尔轻碰石壁", "有人在压着呼吸", "更深处像有东西隔着石层磨了一下"],
+    "light": "这里只有一圈不稳定的灯火，亮处很亮，暗处却更像张着口。"
+  },
+  "areas": [
+    { "id": "false-floor", "name": "钟楼底的假石板", "description": "石板边被鞋尖反复抹平，真正的入口就压在这里。", "notable": ["能锁定入口", "能判断是否有人抢先下去"] },
+    { "id": "ledger-step", "name": "密室台阶与旧账页", "description": "台阶边压着一角被撕下来的誊抄页，旁边还能看到急着翻找留下的灰痕。", "notable": ["能对上钟楼线和失踪者线", "适合做资料比对"] },
+    { "id": "bell-chain", "name": "钟链机关", "description": "旧钟链一路垂到密室边，像是有人想拿它做临时的封锁装置。", "notable": ["可以尝试卡死机关", "风险很高"] }
+  ],
+  "truthLayers": [
+    "失踪者不是被单纯拖进去，而是自己先拿着誊抄页来找钟下密室。",
+    "钟楼、祭坛和地下回响其实是一整套旧封锁结构，只是已经快压不住了。"
+  ],
+  "endingHooks": [
+    "救出人、带走誊抄页后撤离并结团。",
+    "先把机关卡住，再决定要不要回头收拾教堂后患。"
+  ],
+  "clues": [
+    { "id": "clue-hidden-passage", "title": "钟下密室的真正入口", "kind": "core", "quality": "partial", "revealed": false, "source": "scene" },
+    { "id": "clue-bell-ledger", "title": "钟楼编号与失踪者誊抄的对应页", "kind": "core", "quality": "partial", "revealed": false, "source": "scene" },
+    { "id": "clue-missing-confession", "title": "失踪者承认自己拿走了哪一页", "kind": "core", "quality": "partial", "revealed": false, "source": "scene" }
+  ],
+  "events": [
+    { "id": "evt-reckoning-entry", "label": "钟下密室被正式打开了", "triggered": false },
+    { "id": "evt-bell-chain-stalled", "label": "旧钟链与封锁机关被临时卡住", "triggered": false }
+  ],
+  "nextOptions": [
+    { "id": "reckoning-search-entry", "label": "顺着灰痕锁定真正入口", "type": "investigate" },
+    { "id": "reckoning-ledger-crosscheck", "label": "对登记纸、誊抄页和钟楼编号", "type": "investigate" },
+    { "id": "reckoning-calm-witness", "label": "先安抚失踪者，问清他拿了什么", "type": "talk" },
+    { "id": "reckoning-stop-chain", "label": "冒险去卡住钟链机关", "type": "risk" }
+  ],
+  "npcRefs": [],
+  "starterPrompts": [
+    "我先顺着石板边的灰痕找真正入口。",
+    "我把登记纸和那页誊抄摊开，先对一下钟楼编号。",
+    "我先安抚失踪者，让他把拿走的那页说清楚。"
+  ]
+}

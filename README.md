@@ -135,5 +135,5 @@ node core/src/coc7-validation.test.js
 
 ## 下一步
 1. 把 `advance` 从手动推进继续升级成更自动的 hook/条件驱动切幕
-2. 把 story pack / campaign / scene 作者输入格式继续稳定下来
+2. 把多人团的晚到、掉线重回、spotlight 冲突补成完整流程
 3. 把 HTTP bridge / runtime 真正接进正式消息链，而不是只停在仓库内联调层

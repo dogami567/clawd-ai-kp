@@ -74,6 +74,15 @@
           "conditions": {
             "minRevealedCoreClues": 1
           }
+        },
+        {
+          "id": "tower-to-reckoning",
+          "label": "顺着钟绳与灰痕，直接摸到钟下密室",
+          "targetSceneId": "underchurch-reckoning",
+          "status": "planned",
+          "conditions": {
+            "minRevealedCoreClues": 1
+          }
         }
       ]
     },
@@ -91,6 +100,15 @@
           "conditions": {
             "minRevealedCoreClues": 1
           }
+        },
+        {
+          "id": "underchurch-to-reckoning",
+          "label": "锁定地下入口，硬着头皮去把这幕收尾",
+          "targetSceneId": "underchurch-reckoning",
+          "status": "planned",
+          "conditions": {
+            "minRevealedCoreClues": 1
+          }
         }
       ]
     },
@@ -99,6 +117,23 @@
       "title": "失踪者线索浮出水面",
       "phase": "act-2",
       "purpose": "把教堂里拿到的线索转成镇上失踪者主线的正式入口。",
+      "hooks": [
+        {
+          "id": "missing-person-to-reckoning",
+          "label": "带着登记去向和誊抄页，杀回教堂后路收尾",
+          "targetSceneId": "underchurch-reckoning",
+          "status": "planned",
+          "conditions": {
+            "minRevealedCoreClues": 2
+          }
+        }
+      ]
+    },
+    {
+      "sceneId": "underchurch-reckoning",
+      "title": "钟下密室",
+      "phase": "act-3",
+      "purpose": "让钟楼、失踪者与地下线在同一幕收束，并给出可结团的结尾。",
       "hooks": []
     }
   ]

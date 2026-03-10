@@ -6,14 +6,15 @@
     "old-church-night",
     "bell-tower-followup",
     "underchurch-aftershock",
-    "missing-person-followup"
+    "missing-person-followup",
+    "underchurch-reckoning"
   ],
   "playerIntro": [
     "前情：昨晚那阵不该出现的钟声，把你们引到了河谷这座快废弃的旧教堂。",
     "一个熟人今早失了联，只留下“别让他们碰钟楼”的只言片语。你们赶在正式封锁前，决定先进来把情况摸清。"
   ],
   "notes": [
-    "旧教堂是样板场景；后续应优先复用 story pack/campaign 框架，而不是继续硬写单图。",
+    "旧教堂是样板场景；现在已经能从夜探教堂一路收束到钟下密室。",
     "下一步更重要的是导入工作流、通用 scene graph、真实消息接线。"
   ]
 }

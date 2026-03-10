@@ -115,8 +115,10 @@ function buildAdjudicationResponse(sessionState, actor, action, randomInt) {
     balanceNote: adjudication.balanceNote,
     leverageScore: adjudication.leverageScore,
     narrativeBonus: adjudication.narrativeBonus,
-    failForward: adjudication.failForward
+    failForward: adjudication.failForward,
+    ruleGuidance: adjudication.ruleGuidance
   };
+  event.ruleGuidance = adjudication.ruleGuidance;
   event.outcome.stateChanges = buildStateChanges(action, adjudication, event.result.success);
   const timeProgress = applyStateChanges(sessionState, event.outcome.stateChanges);
   event.countdownsTriggered = [
@@ -154,7 +156,11 @@ function buildOutcomePrompt(action, success, adjudication, contentEffects = {}) 
   if (success) {
     return action.onSuccessPrompt || `这一下成了，${adjudication.intent} 已经开始起作用了。`;
   }
-  return action.onFailPrompt || `这一下没全照你想的来，不过事情已经往前拱了一点，代价落在 ${adjudication.failForward} 这边。`;
+  if (action.onFailPrompt) return action.onFailPrompt;
+  if (adjudication.ruleGuidance?.acceptLine) {
+    return `${adjudication.ruleGuidance.acceptLine} ${adjudication.ruleGuidance.failurePreview}`;
+  }
+  return `这一下没全照你想的来，不过事情已经往前拱了一点，代价落在 ${adjudication.failForward} 这边。`;
 }
 
 function submitAction(sessionState, action, randomInt) {

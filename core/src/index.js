@@ -34,6 +34,14 @@ const { importSceneMarkdown } = require("./scene-markdown-import");
 const { importCampaignMarkdown, importStoryPackMarkdown } = require("./campaign-story-markdown-import");
 const { saveSceneTemplate, saveCampaignTemplate, saveStoryPackTemplate } = require("./authoring-save");
 const { normalizeText, routeOldChurchNightAction, routeScenarioAction, processScenarioTurn } = require("./scene-action-router");
+const {
+  FAILURE_FORWARD_LIBRARY,
+  PUSHED_ROLL_LIBRARY,
+  PENALTY_DICE_LIBRARY,
+  SANITY_AFTERMATH_LIBRARY,
+  INJURY_AFTERMATH_LIBRARY,
+  buildActionRuleGuidance
+} = require("./coc7-content-libraries");
 
 module.exports = {
   createSession,
@@ -112,5 +120,11 @@ module.exports = {
   normalizeText,
   routeOldChurchNightAction,
   routeScenarioAction,
-  processScenarioTurn
+  processScenarioTurn,
+  FAILURE_FORWARD_LIBRARY,
+  PUSHED_ROLL_LIBRARY,
+  PENALTY_DICE_LIBRARY,
+  SANITY_AFTERMATH_LIBRARY,
+  INJURY_AFTERMATH_LIBRARY,
+  buildActionRuleGuidance
 };

@@ -1,3 +1,5 @@
+const { buildActionRuleGuidance } = require("./coc7-content-libraries");
+
 function clampImpact(score) {
   if (score <= 1) return "small";
   if (score === 2) return "medium";
@@ -58,6 +60,17 @@ function adjudicateAction(sessionState, actor, action) {
   const basis = buildBasis(action, actor);
   const duration = action.duration || (action.kind === "use_item" ? "1_round" : "instant");
   const balanceNote = action.balanceNote || (impact === "large" ? "效果偏强，若成功也应附带代价或缩短持续时间。" : "效果处于当前场景可接受范围。");
+  const ruleGuidance = buildActionRuleGuidance({
+    action,
+    actor,
+    scene: sessionState?.scene,
+    adjudication: {
+      difficulty,
+      failForward,
+      impact,
+      riskLevel
+    }
+  });
 
   return {
     intent: action.intent || action.kind,
@@ -72,7 +85,8 @@ function adjudicateAction(sessionState, actor, action) {
     leverageScore,
     narrativeBonus,
     skillKey: action.skillKey,
-    nextPrompt: buildNextPrompt(action.kind, false, riskLevel)
+    nextPrompt: buildNextPrompt(action.kind, false, riskLevel),
+    ruleGuidance
   };
 }
 

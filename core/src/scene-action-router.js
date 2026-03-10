@@ -258,6 +258,136 @@ function routeMissingPersonFollowupAction(text, actorId) {
   return null;
 }
 
+function routeUnderchurchReckoningAction(text, actorId) {
+  const normalized = normalizeText(text);
+
+  if (hasAny(normalized, [
+    "暗门",
+    "入口",
+    "找入口",
+    "拖痕",
+    "灰痕",
+    "钟下",
+    "hidden-passage"
+  ])) {
+    return {
+      kind: "explore",
+      actorId,
+      intent: text,
+      skillKey: "Spot Hidden",
+      leverageScore: 2,
+      narrativeBonus: 1,
+      riskLevel: "medium",
+      impactScore: 2,
+      revealClueId: "clue-hidden-passage",
+      clueTitle: "钟下密室的真正入口",
+      clueKind: "core",
+      clueQuality: "clear",
+      mode: "open",
+      onSuccessPrompt: "你顺着灰痕和拖擦印一对，很快就看出来了：真正的入口不在祭坛正下方，而是在钟楼底下那块被鞋尖抹平的石板边。"
+    };
+  }
+
+  if (hasAny(normalized, [
+    "登记纸",
+    "抄本",
+    "誊抄",
+    "比一下",
+    "对一下",
+    "ledger",
+    "布条"
+  ])) {
+    return {
+      kind: "use_item",
+      actorId,
+      intent: text,
+      itemName: "登记纸",
+      skillKey: "Library Use",
+      leverageScore: 2,
+      narrativeBonus: 1,
+      riskLevel: "low",
+      impactScore: 2,
+      revealClueId: "clue-bell-ledger",
+      revealQuality: "clear",
+      clueTitle: "钟楼编号与失踪者誊抄的对应页",
+      clueKind: "core",
+      clueQuality: "clear",
+      mode: "open",
+      onSuccessPrompt: "你把登记纸、誊抄页和钟楼那串编号一拼，终于对上了：失踪者拿走的不是随手画的符号，而是一页专门指向钟下密室的旧账。"
+    };
+  }
+
+  if (hasAny(normalized, [
+    "安抚失踪者",
+    "叫他别慌",
+    "先劝",
+    "问他拿了什么",
+    "问清楚",
+    "missing-person"
+  ])) {
+    return {
+      kind: "talk",
+      actorId,
+      intent: text,
+      skillKey: "Persuade",
+      leverageScore: 1,
+      narrativeBonus: 1,
+      riskLevel: "medium",
+      impactScore: 2,
+      revealClueId: "clue-missing-confession",
+      clueTitle: "失踪者承认自己拿走了哪一页",
+      clueKind: "core",
+      clueQuality: "clear",
+      mode: "open",
+      onSuccessPrompt: "你把人先稳住后，他终于肯承认：自己白天拿走的是钟下密室那一页誊抄，因为他以为那能先把下面的东西封回去。"
+    };
+  }
+
+  if (hasAny(normalized, [
+    "卡住钟链",
+    "卡死机关",
+    "堵住机关",
+    "封住",
+    "拽住钟绳",
+    "reckoning-stop"
+  ])) {
+    return {
+      kind: "risky_action",
+      actorId,
+      intent: text,
+      skillKey: "Fighting",
+      leverageScore: 1,
+      riskLevel: "high",
+      impactScore: 3,
+      mode: "open",
+      failureEventLabel: "钟下机关被你碰得彻底响开了",
+      onFailPrompt: "你人是扑上去了，但钟链还是被你带得狠狠干了一下。那声闷响顺着石壁滚出去时，下面那口冷气一下就活了。"
+    };
+  }
+
+  return null;
+}
+
+function buildScenarioUnmatchedReply(sessionState) {
+  const scenarioId = sessionState?.scene?.meta?.scenarioId;
+  if (scenarioId === "old-church-night") {
+    return "这句我先没稳稳对上现成动作。你可以试着说得更具体一点，比如查祭坛、聊守墓人、临符号、或者直接掀木板。";
+  }
+  if (scenarioId === "bell-tower-followup") {
+    return "这句我先没稳稳对上现成动作。你可以试着说听楼上动静、查钟绳、翻钟室角落。";
+  }
+  if (scenarioId === "underchurch-aftershock") {
+    return "这句我先没稳稳对上现成动作。你可以试着说再听一次深处回响，或者先撤出去。";
+  }
+  if (scenarioId === "missing-person-followup") {
+    return "这句我先没稳稳对上现成动作。你可以试着说对照素描和登记纸，或者去街口打听失踪者最后露面。";
+  }
+  if (scenarioId === "underchurch-reckoning") {
+    return "这句我先没稳稳对上现成动作。你可以试着说找钟下密室入口、对登记纸和誊抄、安抚失踪者，或者去卡住钟链机关。";
+  }
+  return "这句我先没稳稳对上现成动作。你可以把动作改得更具体一点，我再替你落到现成判定上。";
+}
+
 function routeScenarioAction(sessionState, actorId, text) {
   const scenarioId = sessionState?.scene?.meta?.scenarioId;
   if (scenarioId === "old-church-night") {
@@ -271,6 +401,9 @@ function routeScenarioAction(sessionState, actorId, text) {
   }
   if (scenarioId === "missing-person-followup") {
     return routeMissingPersonFollowupAction(text, actorId);
+  }
+  if (scenarioId === "underchurch-reckoning") {
+    return routeUnderchurchReckoningAction(text, actorId);
   }
   return null;
 }
@@ -290,7 +423,7 @@ function processScenarioTurn(sessionState, actorId, text, submitAction, randomIn
     return {
       ok: false,
       reason: "unmatched_action",
-      reply: "这句我先没稳稳对上现成动作。你可以试着说得更具体一点，比如查祭坛、聊守墓人、临符号、或者直接掀木板。"
+      reply: buildScenarioUnmatchedReply(sessionState)
     };
   }
 
@@ -317,6 +450,7 @@ module.exports = {
   routeBellTowerFollowupAction,
   routeUnderchurchAftershockAction,
   routeMissingPersonFollowupAction,
+  routeUnderchurchReckoningAction,
   routeScenarioAction,
   processScenarioTurn
 };

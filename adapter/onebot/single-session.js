@@ -575,14 +575,15 @@ function detectBriefingConsent(text = "") {
   if (!normalized) return null;
   if (includesAny(normalized, ["看看剧本", "剧本列表", "模组列表", "规则", "边界"])) return "repeat";
   if (includesAny(normalized, ["开始建卡", "开始车卡", "继续", "开始", "好", "行", "没问题", "可以"])) return "confirm";
-  if (includesAny(normalized, ["车卡", "建卡", "roll", "记者", "侦探", "医生", "教授", "艺术家", "退伍军人", "富家子", "quickfire", "快速车卡"])) return "confirm";
+  if (includesAny(normalized, ["车卡", "建卡", "roll", "quickfire", "快速车卡"]) || extractOccupationKeyFromText(normalized)) return "confirm";
   return null;
 }
 
 function getOccupationAliasPairs() {
   const dynamicPairs = listOccupationTemplates().flatMap((occupation) => ([
     [occupation.key.toLowerCase(), occupation.key],
-    [occupation.name.toLowerCase(), occupation.key]
+    [occupation.name.toLowerCase(), occupation.key],
+    ...((occupation.aliases || []).map((alias) => [String(alias).toLowerCase(), occupation.key]))
   ]));
   return [...dynamicPairs, ...OCCUPATION_ALIASES];
 }
@@ -757,6 +758,9 @@ function formatSceneActionChoiceReply(pendingChoice, options = {}) {
       : "这一下我先停一下，把选择权给你。";
     const lines = [introLine];
     if (pendingChoice.failureLine) lines.push(pendingChoice.failureLine);
+    if (pendingChoice.failForwardLine) lines.push(`失败推进：${pendingChoice.failForwardLine}`);
+    if (pendingChoice.penaltyNote) lines.push(`惩罚提示：${pendingChoice.penaltyNote}`);
+    if (pendingChoice.crisisNote) lines.push(`再硬顶的代价：${pendingChoice.crisisNote}`);
     lines.push("你现在可以这么选：");
     for (const option of pendingChoice.options || []) {
       lines.push(`- ${option.displayLabel}：${option.playerHint}`);
@@ -1855,6 +1859,7 @@ function buildPostCheckChoice(stateBundle, action, turnResult, beforeSessionStat
   const event = turnResult?.event;
   if (!event?.result || event.result.success || event.mode === "hidden") return null;
   if (event.result.successLevel === "fumble") return null;
+  const ruleGuidance = turnResult?.ruleGuidance || event?.ruleGuidance || event?.adjudication?.ruleGuidance || null;
   const luckCost = Math.max(0, Number(event.roll || 0) - Number(event.targetValue || 0));
   const canSpendLuck = luckCost > 0 && Number(investigator?.resources?.luck || 0) >= luckCost;
   const canPush = ["explore", "talk", "use_item", "risky_action", "steal", "follow"].includes(action?.kind) && action?.pushed !== true;
@@ -1872,21 +1877,24 @@ function buildPostCheckChoice(stateBundle, action, turnResult, beforeSessionStat
     luckCost,
     targetNpcName: action.targetNpc || null,
     failureLine: formatCheckResultLine(event),
+    failForwardLine: ruleGuidance?.failurePreview || null,
+    penaltyNote: ruleGuidance?.penaltyNote || null,
+    crisisNote: ruleGuidance?.crisisNote || null,
     options: [
       {
         id: "accept",
         displayLabel: "接受当前结果",
-        playerHint: "按现在这个失败后果继续往下走。"
+        playerHint: ruleGuidance?.acceptLine || "按现在这个失败后果继续往下走。"
       },
       ...(canPush ? [{
         id: "push",
         displayLabel: "推骰再试",
-        playerHint: "再赌一次；要是还没过，后果会更难看。"
+        playerHint: [ruleGuidance?.pushLine || "再赌一次；要是还没过，后果会更难看。", ruleGuidance?.crisisNote].filter(Boolean).join(" ")
       }] : []),
       ...(canSpendLuck ? [{
         id: "luck",
         displayLabel: `花幸运 ${luckCost}`,
-        playerHint: `直接把这次失败拽到成功，但会扣掉 ${luckCost} 点幸运。`
+        playerHint: `直接把这次失败拽到成功，但会扣掉 ${luckCost} 点幸运。${ruleGuidance?.penaltyNote ? " 眼下环境本身没变，后面的压力照样在。" : ""}`
       }] : [])
     ]
   });
@@ -2003,7 +2011,7 @@ function formatOccupationChoiceReply(draft) {
   const lines = [
     ...formatTraditionalDraftIntroLines(draft),
     "",
-    "下一步先定职业。你可以直接回职业名，比如：记者、侦探、医生、教授、艺术家、退伍军人、富家子。",
+    "下一步先定职业。你可以直接回职业名，比如：记者、图书管理员、神职人员、警探、护士。",
     `当前可选职业：${listOccupationTemplates().map((occupation) => `${occupation.name}(${occupation.key})`).join("、")}`
   ];
   return lines.join("\n");
@@ -3793,7 +3801,7 @@ function formatHelpReply() {
     "- /aikp next 切到下一位玩家",
     "- /aikp settle 生成本轮结团摘要",
     "- /aikp reset 重开当前场景",
-    "职业 key 可先用：journalist detective doctor professor artist veteran dilettante"
+    `职业 key 可先用：${listOccupationTemplates().map((occupation) => occupation.key).join(" ")}`
   ].join("\n");
 }
 

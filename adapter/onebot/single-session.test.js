@@ -350,6 +350,15 @@ test("natural language can quickfire chargen with chinese occupation", () => {
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
+test("natural language can quickfire chargen with expanded occupation aliases", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  const result = handleOneBotMessage(makeEvent("给我快速车卡，职业图书管理员"), { storageRoot, randomInt: () => 0 });
+  assert.equal(result.ok, true);
+  assert.match(result.reply, /快速车卡/);
+  assert.match(result.reply, /图书管理员/);
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
 test("party-roll can batch roll all joined party members", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   handleOneBotMessage(makeEvent("/aikp join"), { storageRoot });
@@ -591,6 +600,8 @@ test("failed checks offer accept push and luck choices", () => {
   completeTraditionalInvestigator(storageRoot);
   const result = handleOneBotMessage(makeEvent("我想走说服，找守墓人聊聊钟声"), { storageRoot, randomInt: () => 28 });
   assert.equal(result.ok, false);
+  assert.match(result.reply, /失败推进：/);
+  assert.match(result.reply, /惩罚骰/);
   assert.match(result.reply, /你现在可以这么选：/);
   assert.match(result.reply, /接受当前结果/);
   assert.match(result.reply, /推骰再试/);
