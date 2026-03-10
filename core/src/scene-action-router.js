@@ -165,6 +165,99 @@ function routeBellTowerFollowupAction(text, actorId) {
   return null;
 }
 
+function routeUnderchurchAftershockAction(text, actorId) {
+  const normalized = normalizeText(text);
+
+  if (hasAny(normalized, ["再听一次", "听那声音", "听深处", "听地板下面", "aftershock-hold"])) {
+    return {
+      kind: "explore",
+      actorId,
+      intent: text,
+      skillKey: "Listen",
+      leverageScore: 2,
+      narrativeBonus: 1,
+      riskLevel: "high",
+      impactScore: 2,
+      revealClueId: "clue-aftershock",
+      clueTitle: "被惊动后的深处回响",
+      clueKind: "core",
+      clueQuality: "clear",
+      mode: "open",
+      onSuccessPrompt: "这次你听得很清楚：那声音不是在原地磨，而是在贴着地下某条窄路慢慢挪。它像是在找出口。"
+    };
+  }
+
+  if (hasAny(normalized, ["先撤", "撤出去", "先退", "赶紧撤", "aftershock-retreat"])) {
+    return {
+      kind: "risky_action",
+      actorId,
+      intent: text,
+      skillKey: "Stealth",
+      leverageScore: 1,
+      narrativeBonus: 1,
+      riskLevel: "medium",
+      impactScore: 1,
+      mode: "open",
+      onSuccessPrompt: "你们压着动静一点点退了出来，总算没把更糟的东西直接引到面前，但那股潮冷味还在跟着。"
+    };
+  }
+
+  return null;
+}
+
+function routeMissingPersonFollowupAction(text, actorId) {
+  const normalized = normalizeText(text);
+
+  if (hasAny(normalized, [
+    "对照素描",
+    "对照资料",
+    "翻登记",
+    "查登记",
+    "摊开对",
+    "摊开对一下",
+    "教堂符号",
+    "missing-cross-check"
+  ])) {
+    return {
+      kind: "explore",
+      actorId,
+      intent: text,
+      skillKey: "Library Use",
+      leverageScore: 2,
+      narrativeBonus: 1,
+      riskLevel: "low",
+      impactScore: 2,
+      revealClueId: "clue-missing-ledger",
+      clueTitle: "失踪者最后登记的去向",
+      clueKind: "core",
+      clueQuality: "clear",
+      mode: "open",
+      onSuccessPrompt: "登记纸和素描一对，你们就发现失踪者最后去的不是教堂正门，而是教堂后方那条平时没人走的小路。"
+    };
+  }
+
+  if (hasAny(normalized, ["街口", "打听", "最后露面", "问问失踪者", "missing-street-talk"])) {
+    return {
+      kind: "talk",
+      actorId,
+      intent: text,
+      skillKey: "Persuade",
+      leverageScore: 1,
+      narrativeBonus: 1,
+      riskLevel: "low",
+      impactScore: 1,
+      revealClueId: "clue-sketch-link",
+      clueTitle: "素描与教堂符号的对应关系",
+      clueKind: "core",
+      clueQuality: "partial",
+      mode: "open",
+      onSuccessPrompt: "街口几个人的说法一拼，你们基本能确认：失踪者白天还带着那张素描，而且边走边在对照教堂里的符号。"
+    };
+  }
+
+  return null;
+}
+
 function routeScenarioAction(sessionState, actorId, text) {
   const scenarioId = sessionState?.scene?.meta?.scenarioId;
   if (scenarioId === "old-church-night") {
@@ -172,6 +265,12 @@ function routeScenarioAction(sessionState, actorId, text) {
   }
   if (scenarioId === "bell-tower-followup") {
     return routeBellTowerFollowupAction(text, actorId);
+  }
+  if (scenarioId === "underchurch-aftershock") {
+    return routeUnderchurchAftershockAction(text, actorId);
+  }
+  if (scenarioId === "missing-person-followup") {
+    return routeMissingPersonFollowupAction(text, actorId);
   }
   return null;
 }
@@ -216,6 +315,8 @@ module.exports = {
   normalizeText,
   routeOldChurchNightAction,
   routeBellTowerFollowupAction,
+  routeUnderchurchAftershockAction,
+  routeMissingPersonFollowupAction,
   routeScenarioAction,
   processScenarioTurn
 };

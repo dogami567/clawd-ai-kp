@@ -38,8 +38,68 @@
             "requiredTriggeredEvents": ["教堂深处有东西苏醒", "祭坛下的脆响把教堂深处的东西惊醒了"],
             "minDangerLevel": "medium"
           }
+        },
+        {
+          "id": "trace-missing-person",
+          "label": "把教堂线索直接对回失踪者主线",
+          "targetSceneId": "missing-person-followup",
+          "status": "planned",
+          "conditions": {
+            "minRevealedCoreClues": 2,
+            "maxDangerLevel": "high"
+          }
         }
       ]
+    },
+    {
+      "sceneId": "bell-tower-followup",
+      "title": "钟楼余响",
+      "phase": "act-2",
+      "purpose": "把钟楼证据收成后续行动，并能顺着证据继续对失踪者主线。",
+      "hooks": [
+        {
+          "id": "tower-to-underchurch",
+          "label": "顺着钟楼痕迹继续往地下入口摸",
+          "targetSceneId": "underchurch-aftershock",
+          "status": "planned",
+          "conditions": {
+            "minRevealedCoreClues": 1
+          }
+        },
+        {
+          "id": "tower-to-missing-person",
+          "label": "带着钟楼证据回镇上，对照失踪者主线",
+          "targetSceneId": "missing-person-followup",
+          "status": "planned",
+          "conditions": {
+            "minRevealedCoreClues": 1
+          }
+        }
+      ]
+    },
+    {
+      "sceneId": "underchurch-aftershock",
+      "title": "教堂深处的余震",
+      "phase": "act-2",
+      "purpose": "把惊动后的后果转成地下线和失踪者线的分流点。",
+      "hooks": [
+        {
+          "id": "underchurch-to-missing-person",
+          "label": "带着地下余震线索去对失踪者主线",
+          "targetSceneId": "missing-person-followup",
+          "status": "planned",
+          "conditions": {
+            "minRevealedCoreClues": 1
+          }
+        }
+      ]
+    },
+    {
+      "sceneId": "missing-person-followup",
+      "title": "失踪者线索浮出水面",
+      "phase": "act-2",
+      "purpose": "把教堂里拿到的线索转成镇上失踪者主线的正式入口。",
+      "hooks": []
     }
   ]
 }

@@ -674,6 +674,85 @@ test("hooks and advance commands support conditional transitions", () => {
   rmSync(storageRoot, { recursive: true, force: true });
 });
 
+test("bell tower route can keep advancing into the missing-person followup", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  completeTraditionalInvestigator(storageRoot);
+
+  handleOneBotMessage(makeEvent("我借着手电去看祭坛背后的刮痕"), { storageRoot, randomInt: () => 28 });
+  const towerAdvance = handleOneBotMessage(makeEvent("/aikp advance"), { storageRoot });
+  assert.equal(towerAdvance.ok, true);
+  assert.match(towerAdvance.reply, /bell-tower-followup/);
+
+  const towerAction = handleOneBotMessage(makeEvent("我想看看钟绳有没有被人新近碰过。"), {
+    storageRoot,
+    randomInt: () => 8
+  });
+  assert.equal(towerAction.ok, true);
+  assert.match(towerAction.reply, /钟绳|昨晚来的人/);
+
+  const towerHooks = handleOneBotMessage(makeEvent("/aikp hooks"), { storageRoot });
+  assert.equal(towerHooks.ok, true);
+  assert.match(towerHooks.reply, /tower-to-missing-person/);
+
+  const missingAdvance = handleOneBotMessage(makeEvent("/aikp advance tower-to-missing-person"), { storageRoot });
+  assert.equal(missingAdvance.ok, true);
+  assert.match(missingAdvance.reply, /missing-person-followup/);
+
+  const missingAction = handleOneBotMessage(makeEvent("我先把素描和教堂符号摊开对一下。"), {
+    storageRoot,
+    randomInt: () => 8
+  });
+  assert.equal(missingAction.ok, true);
+  assert.match(missingAction.reply, /登记纸和素描一对|失踪者最后登记的去向/);
+
+  const gotoUnderchurch = handleOneBotMessage(makeEvent("/aikp goto underchurch-aftershock"), { storageRoot });
+  assert.equal(gotoUnderchurch.ok, true);
+  assert.match(gotoUnderchurch.reply, /underchurch-aftershock/);
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("underchurch and missing-person chain supports manual advance and resume", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  selectDefaultStoryPack(storageRoot);
+  completeTraditionalInvestigator(storageRoot);
+
+  handleOneBotMessage(makeEvent("我直接把祭坛下面那块木板掀开"), { storageRoot, randomInt: () => 81 });
+  const hooksBefore = handleOneBotMessage(makeEvent("/aikp hooks"), { storageRoot });
+  assert.equal(hooksBefore.ok, true);
+  assert.match(hooksBefore.reply, /retreat-after-awakening/);
+
+  const underchurchAdvance = handleOneBotMessage(makeEvent("/aikp advance retreat-after-awakening"), { storageRoot });
+  assert.equal(underchurchAdvance.ok, true);
+  assert.match(underchurchAdvance.reply, /underchurch-aftershock/);
+
+  const underchurchAction = handleOneBotMessage(makeEvent("我先别乱动，再听一次那声音是从哪边来的。"), {
+    storageRoot,
+    randomInt: () => 8
+  });
+  assert.equal(underchurchAction.ok, true);
+  assert.match(underchurchAction.reply, /深处回响|在贴着地下某条窄路慢慢挪/);
+
+  const underchurchHooks = handleOneBotMessage(makeEvent("/aikp hooks"), { storageRoot });
+  assert.equal(underchurchHooks.ok, true);
+  assert.match(underchurchHooks.reply, /underchurch-to-missing-person/);
+
+  const missingAdvance = handleOneBotMessage(makeEvent("/aikp advance underchurch-to-missing-person"), { storageRoot });
+  assert.equal(missingAdvance.ok, true);
+  assert.match(missingAdvance.reply, /missing-person-followup/);
+
+  handleOneBotMessage(makeEvent("先不跑了"), { storageRoot });
+  handleOneBotMessage(makeEvent("我想跑团"), { storageRoot });
+  const resumed = handleOneBotMessage(makeEvent("续上"), { storageRoot });
+  assert.equal(resumed.ok, true);
+
+  const resumedState = handleOneBotMessage(makeEvent("/aikp state"), { storageRoot });
+  assert.match(resumedState.reply, /失踪者线索浮出水面/);
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
 test("scene and recap commands show environment and stage summary", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
   selectDefaultStoryPack(storageRoot);

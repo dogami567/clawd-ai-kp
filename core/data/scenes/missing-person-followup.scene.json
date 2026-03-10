@@ -1,0 +1,43 @@
+{
+  "id": "missing-person-followup",
+  "title": "失踪者线索浮出水面",
+  "opening": "回到镇上后，旧教堂里那点线索终于不再只是怪谈。符号、钟楼和失踪者留下的只言片语，开始能拼到同一张桌上了。",
+  "summary": "失踪者线索浮出水面",
+  "location": "镇上档案室 / 失踪者最后露面的街区",
+  "sceneType": "investigation",
+  "threats": { "exposure": 1, "pressure": 2, "dangerLevel": "medium" },
+  "atmosphere": {
+    "tone": "线索开始收束，但你们离人也更近、离麻烦也更近",
+    "smell": ["旧纸", "煤油味", "潮冷街道的灰尘"],
+    "sound": ["远处零碎人声", "桌上纸页摩擦声", "街口马车慢慢滚过去"],
+    "light": "屋里灯不算亮，但至少终于能把细节摊开看了。"
+  },
+  "areas": [
+    { "id": "archive-desk", "name": "档案桌", "description": "桌上摆着失踪者留下的素描、教堂符号描样和几张镇上登记纸。", "notable": ["适合做资料对照", "能串出人物关系"] },
+    { "id": "street-corner", "name": "最后露面的街口", "description": "有人说白天在这附近见过失踪者，但说法不一致。", "notable": ["可问到最后行踪", "能补镇上视角"] }
+  ],
+  "truthLayers": [
+    "失踪者不是无缘无故碰上旧教堂，而是已经在追某条旧线。",
+    "钟楼和教堂深处都只是表层，真正的关键是失踪者到底拿走了什么。"
+  ],
+  "endingHooks": [
+    "继续追失踪者留下的物件与去向。",
+    "带着整理好的线索回教堂，准备再下去。"
+  ],
+  "clues": [
+    { "id": "clue-missing-ledger", "title": "失踪者最后登记的去向", "kind": "core", "quality": "clear", "revealed": false, "source": "scene" },
+    { "id": "clue-sketch-link", "title": "素描与教堂符号的对应关系", "kind": "core", "quality": "partial", "revealed": false, "source": "scene" }
+  ],
+  "events": [
+    { "id": "evt-missing-person-link", "label": "失踪者主线终于和旧教堂对上了", "triggered": false }
+  ],
+  "nextOptions": [
+    { "id": "missing-cross-check", "label": "对照素描和登记资料", "type": "investigate" },
+    { "id": "missing-street-talk", "label": "去街口打听失踪者最后露面", "type": "talk" }
+  ],
+  "npcRefs": [],
+  "starterPrompts": [
+    "我先把素描和教堂符号摊开对一下。",
+    "我去街口问问失踪者最后一次被人看见是在什么时候。"
+  ]
+}
