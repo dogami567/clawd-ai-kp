@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } = require("fs");
+const { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } = require("fs");
 const { join } = require("path");
 const { tmpdir } = require("os");
 const { handleOneBotMessage, buildConversationKey, getKpRuntimePrompt } = require("./single-session");
@@ -67,6 +67,27 @@ function prepareQuickfireInvestigator(storageRoot, occupationKey = "journalist")
   });
   assert.equal(started.ok, true);
   return started;
+}
+
+function getSessionFile(storageRoot, eventOverrides = {}) {
+  const conversationKey = buildConversationKey(makeEvent("session", eventOverrides));
+  return join(storageRoot, "sessions", `${conversationKey}.json`);
+}
+
+function rewriteSession(storageRoot, updater, eventOverrides = {}) {
+  const sessionFile = getSessionFile(storageRoot, eventOverrides);
+  const snapshot = JSON.parse(readFileSync(sessionFile, "utf8"));
+  updater(snapshot.sessionState);
+  writeFileSync(sessionFile, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+}
+
+function prepareCombatParty(storageRoot, members = [], baseOverrides = {}) {
+  handleOneBotMessage(makeEvent("/aikp pack old-church-arc-pack", baseOverrides), { storageRoot });
+  handleOneBotMessage(makeEvent("/aikp join", baseOverrides), { storageRoot });
+  for (const member of members) {
+    handleOneBotMessage(makeEvent("/aikp join", { ...baseOverrides, ...member }), { storageRoot });
+  }
+  handleOneBotMessage(makeEvent("/aikp party-roll journalist", baseOverrides), { storageRoot, randomInt: () => 3 });
 }
 
 function resolveFailedPersuade(storageRoot, overrides = {}) {
@@ -1141,6 +1162,127 @@ test("combat and san commands return bounded fallback guidance for invalid input
   const invalidSan = handleOneBotMessage(makeEvent("/aikp san ???"), { storageRoot });
   assert.equal(invalidSan.ok, true);
   assert.match(invalidSan.reply, /成功\/失败两档损失/);
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("multiplayer combat sorts by dex and blocks off-turn commands", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  prepareCombatParty(storageRoot, [
+    { user_id: 9527, sender: { nickname: "阿青" } },
+    { user_id: 7788, sender: { nickname: "老周" } }
+  ]);
+  rewriteSession(storageRoot, (session) => {
+    const dexByName = { dogami: 50, 阿青: 80, 老周: 60 };
+    for (const investigator of Object.values(session.investigators)) {
+      investigator.attributes.DEX = dexByName[investigator.name] || investigator.attributes.DEX;
+    }
+  });
+
+  const started = handleOneBotMessage(makeEvent("/aikp combat start"), { storageRoot });
+  assert.equal(started.ok, true);
+  assert.match(started.reply, /战斗顺序：1\.阿青\(DEX 80\) → 2\.老周\(DEX 60\) → 3\.dogami\(DEX 50\)/);
+
+  const who = handleOneBotMessage(makeEvent("/aikp who"), { storageRoot });
+  assert.equal(who.ok, true);
+  assert.match(who.reply, /阿青/);
+
+  const blocked = handleOneBotMessage(makeEvent("/aikp combat attack"), { storageRoot });
+  assert.equal(blocked.ok, true);
+  assert.match(blocked.reply, /当前 spotlight 还在 阿青/);
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("multiplayer combat auto advances in initiative order and focus can override explicitly", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  prepareCombatParty(storageRoot, [
+    { user_id: 9527, sender: { nickname: "阿青" } },
+    { user_id: 7788, sender: { nickname: "老周" } }
+  ]);
+  rewriteSession(storageRoot, (session) => {
+    const dexByName = { dogami: 50, 阿青: 80, 老周: 60 };
+    for (const investigator of Object.values(session.investigators)) {
+      investigator.attributes.DEX = dexByName[investigator.name] || investigator.attributes.DEX;
+    }
+  });
+
+  handleOneBotMessage(makeEvent("/aikp combat start"), { storageRoot });
+
+  const first = handleOneBotMessage(
+    makeEvent("/aikp combat attack dodge", { user_id: 9527, sender: { nickname: "阿青" } }),
+    { storageRoot, randomInt: makeQueuedRandomInt([12, 88, 2], 2) }
+  );
+  assert.equal(first.ok, true);
+  assert.match(first.reply, /战斗第 1 轮/);
+  assert.match(first.reply, /当前 spotlight 还在 老周|老周 这边/);
+
+  const secondWho = handleOneBotMessage(makeEvent("/aikp who"), { storageRoot });
+  assert.match(secondWho.reply, /老周/);
+
+  const second = handleOneBotMessage(
+    makeEvent("/aikp combat attack dodge", { user_id: 7788, sender: { nickname: "老周" } }),
+    { storageRoot, randomInt: makeQueuedRandomInt([12, 88, 2], 2) }
+  );
+  assert.equal(second.ok, true);
+  assert.match(second.reply, /当前 spotlight 还在 dogami|dogami 这边/);
+
+  const focused = handleOneBotMessage(makeEvent("/aikp focus 阿青"), { storageRoot });
+  assert.equal(focused.ok, true);
+  assert.match(focused.reply, /阿青/);
+
+  const afterFocus = handleOneBotMessage(makeEvent("/aikp who"), { storageRoot });
+  assert.match(afterFocus.reply, /阿青/);
+
+  rmSync(storageRoot, { recursive: true, force: true });
+});
+
+test("combat current actor survives resume and different groups stay isolated", () => {
+  const storageRoot = mkdtempSync(join(tmpdir(), "aikp-onebot-"));
+  prepareCombatParty(storageRoot, [
+    { user_id: 9527, sender: { nickname: "阿青" } }
+  ]);
+  rewriteSession(storageRoot, (session) => {
+    const dexByName = { dogami: 50, 阿青: 80 };
+    for (const investigator of Object.values(session.investigators)) {
+      investigator.attributes.DEX = dexByName[investigator.name] || investigator.attributes.DEX;
+    }
+  });
+
+  handleOneBotMessage(makeEvent("/aikp combat start"), { storageRoot });
+  handleOneBotMessage(
+    makeEvent("/aikp combat attack dodge", { user_id: 9527, sender: { nickname: "阿青" } }),
+    { storageRoot, randomInt: makeQueuedRandomInt([12, 88, 2], 2) }
+  );
+
+  handleOneBotMessage(makeEvent("先不跑了"), { storageRoot });
+  handleOneBotMessage(makeEvent("我想跑团"), { storageRoot });
+  const resumed = handleOneBotMessage(makeEvent("续上"), { storageRoot });
+  assert.equal(resumed.ok, true);
+
+  const resumedWho = handleOneBotMessage(makeEvent("/aikp who"), { storageRoot });
+  assert.match(resumedWho.reply, /dogami/);
+  const resumedState = handleOneBotMessage(makeEvent("/aikp state"), { storageRoot });
+  assert.match(resumedState.reply, /战斗：进行中｜第 2 轮/);
+
+  prepareCombatParty(storageRoot, [
+    { user_id: 8899, group_id: 95270002, sender: { nickname: "小李" } }
+  ], { group_id: 95270002 });
+  rewriteSession(storageRoot, (session) => {
+    const dexByName = { dogami: 70, 小李: 40 };
+    for (const investigator of Object.values(session.investigators)) {
+      investigator.attributes.DEX = dexByName[investigator.name] || investigator.attributes.DEX;
+    }
+  }, { group_id: 95270002 });
+
+  handleOneBotMessage(makeEvent("/aikp combat start", { group_id: 95270002 }), { storageRoot });
+  const otherGroupWho = handleOneBotMessage(makeEvent("/aikp who", { group_id: 95270002 }), { storageRoot });
+  assert.match(otherGroupWho.reply, /dogami/);
+
+  const originalGroupWho = handleOneBotMessage(makeEvent("/aikp who"), { storageRoot });
+  assert.match(originalGroupWho.reply, /dogami/);
+  const originalGroupParty = handleOneBotMessage(makeEvent("/aikp party"), { storageRoot });
+  assert.match(originalGroupParty.reply, /阿青/);
 
   rmSync(storageRoot, { recursive: true, force: true });
 });

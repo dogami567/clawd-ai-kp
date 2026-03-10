@@ -2449,7 +2449,7 @@ function syncActorIntoTurnState(meta, actorId) {
 function buildPartyEntries(stateBundle) {
   const members = listPartyMembers(stateBundle.meta);
   const turnState = ensureTurnState(stateBundle.meta);
-  return members.map((member) => {
+  const entries = members.map((member) => {
     const actorId =
       member?.investigatorId != null && String(member.investigatorId).trim()
         ? String(member.investigatorId).trim()
@@ -2466,6 +2466,106 @@ function buildPartyEntries(stateBundle) {
       lastActionSummary: actorId ? (ensureActorSoftTimeState(stateBundle, actorId)?.lastActionSummary || null) : null
     };
   });
+  if (stateBundle.sessionState?.scene?.sceneType !== "combat") {
+    return entries;
+  }
+  const orderMap = new Map(turnState.actorOrder.map((actorId, index) => [actorId, index]));
+  return entries.sort((left, right) => {
+    const leftIndex = left.actorId && orderMap.has(left.actorId) ? orderMap.get(left.actorId) : Number.MAX_SAFE_INTEGER;
+    const rightIndex = right.actorId && orderMap.has(right.actorId) ? orderMap.get(right.actorId) : Number.MAX_SAFE_INTEGER;
+    if (leftIndex !== rightIndex) return leftIndex - rightIndex;
+    return String(left.userName || left.actorId || "")
+      .localeCompare(String(right.userName || right.actorId || ""), "zh-Hans-CN");
+  });
+}
+
+function getCombatInitiativeScore(investigator) {
+  return Number.isFinite(Number(investigator?.attributes?.DEX))
+    ? Number(investigator.attributes.DEX)
+    : 0;
+}
+
+function listReadyCombatParticipants(stateBundle) {
+  return listPartyMembers(stateBundle.meta)
+    .map((member) => {
+      const actorId =
+        member?.investigatorId != null && String(member.investigatorId).trim()
+          ? String(member.investigatorId).trim()
+          : stateBundle.meta.actorsByUserId[String(member.userId)] || null;
+      const investigator = actorId ? stateBundle.sessionState.investigators?.[actorId] : null;
+      return {
+        userId: String(member.userId),
+        userName: member.userName,
+        actorId,
+        investigator
+      };
+    })
+    .filter((entry) => entry.actorId && entry.investigator);
+}
+
+function formatCombatInitiativeOrder(stateBundle) {
+  const turnState = ensureTurnState(stateBundle.meta);
+  const orderedActors = turnState.actorOrder
+    .map((actorId) => stateBundle.sessionState.investigators?.[actorId])
+    .filter(Boolean);
+  if (!orderedActors.length) return null;
+  return `战斗顺序：${orderedActors.map((investigator, index) => `${index + 1}.${investigator.name}(DEX ${getCombatInitiativeScore(investigator)})`).join(" → ")}`;
+}
+
+function syncCombatTurnOrder(stateBundle, options = {}) {
+  if (stateBundle.sessionState?.scene?.sceneType !== "combat") return null;
+  if (inferPartyMode(stateBundle.meta, stateBundle.sessionState) !== "group") return null;
+
+  const turnState = ensureTurnState(stateBundle.meta);
+  const originalOrder = new Map(turnState.actorOrder.map((actorId, index) => [actorId, index]));
+  const sortedActorIds = listReadyCombatParticipants(stateBundle)
+    .sort((left, right) => {
+      const leftDex = getCombatInitiativeScore(left.investigator);
+      const rightDex = getCombatInitiativeScore(right.investigator);
+      if (leftDex !== rightDex) return rightDex - leftDex;
+      const leftOriginal = originalOrder.has(left.actorId) ? originalOrder.get(left.actorId) : Number.MAX_SAFE_INTEGER;
+      const rightOriginal = originalOrder.has(right.actorId) ? originalOrder.get(right.actorId) : Number.MAX_SAFE_INTEGER;
+      if (leftOriginal !== rightOriginal) return leftOriginal - rightOriginal;
+      return String(left.userName || left.actorId || "")
+        .localeCompare(String(right.userName || right.actorId || ""), "zh-Hans-CN");
+    })
+    .map((entry) => entry.actorId);
+
+  if (!sortedActorIds.length) return null;
+  turnState.actorOrder = sortedActorIds;
+  if (options.resetRound === true) {
+    turnState.round = 1;
+  }
+  const preferredCurrentActorId =
+    options.currentActorId && sortedActorIds.includes(options.currentActorId)
+      ? options.currentActorId
+      : (options.keepCurrent === true && sortedActorIds.includes(turnState.currentActorId)
+        ? turnState.currentActorId
+        : sortedActorIds[0]);
+  turnState.currentActorId = preferredCurrentActorId;
+  return {
+    actorOrder: [...sortedActorIds],
+    currentActorId: preferredCurrentActorId,
+    orderLine: formatCombatInitiativeOrder(stateBundle)
+  };
+}
+
+function maybeAdvanceCombatTurn(stateBundle, resolvedActorId) {
+  if (stateBundle.sessionState?.scene?.sceneType !== "combat") return null;
+  const synced = syncCombatTurnOrder(stateBundle, { keepCurrent: true });
+  if (!synced || synced.actorOrder.length < 2) return synced;
+
+  const turnState = ensureTurnState(stateBundle.meta);
+  if (resolvedActorId && synced.actorOrder.includes(resolvedActorId)) {
+    turnState.currentActorId = resolvedActorId;
+  }
+  const advanced = advanceCurrentActor(stateBundle);
+  return {
+    actorOrder: [...advanced.actorOrder],
+    currentActorId: advanced.currentActorId,
+    round: advanced.round,
+    orderLine: formatCombatInitiativeOrder(stateBundle)
+  };
 }
 
 function resolveActorSelection(stateBundle, selector = "") {
@@ -2644,9 +2744,15 @@ function formatPartySummary(stateBundle) {
   const turnState = ensureTurnState(stateBundle.meta);
   const isGroupConversation = stateBundle.layout?.conversationKey?.startsWith("onebot-group-");
   const partyMode = inferPartyMode(stateBundle.meta, stateBundle.sessionState) === "group" ? "多人" : "单人";
+  const combatOrderLine = stateBundle.sessionState?.scene?.sceneType === "combat"
+    ? formatCombatInitiativeOrder(stateBundle)
+    : null;
   const lines = [
     `队伍面板｜${partyMode}｜${isPartyLocked(stateBundle.meta) ? "名单已锁" : "名单开放"}｜第 ${turnState.round} 轮`
   ];
+  if (combatOrderLine) {
+    lines.push(combatOrderLine);
+  }
   if (!entries.length) {
     lines.push("- 当前还没人入团。直接 @我 说“开始建卡”“记者吧”或“给我快速医生卡”就会按 QQ 记进名单。");
     if (isGroupConversation) {
@@ -2953,11 +3059,18 @@ function executeSceneActionCommand(event, stateBundle, actorResult, action, opti
       action,
       options.randomInt || defaultRandomInt
     );
+    let combatTurnState = null;
+    if (action.kind === "start_combat") {
+      combatTurnState = syncCombatTurnOrder(stateBundle, { resetRound: true });
+    } else if (action.kind === "combat_round") {
+      combatTurnState = maybeAdvanceCombatTurn(stateBundle, actorResult.actorId);
+    }
     persistSessionStateBundle(stateBundle);
     const deltaSummary = formatStateDelta(beforeSessionState, stateBundle.sessionState);
     const sceneBeat = formatSceneBeat(stateBundle.sessionState);
     const optionCue = formatOptionCue(stateBundle.sessionState);
     const spotlightCue = formatSpotlightCue(stateBundle);
+    const combatOrderLine = combatTurnState?.orderLine || null;
     const investigator = stateBundle.sessionState.investigators?.[actorResult.actorId];
     const outcome = result.event || result;
     const operationSummary = describeOperationOutcome(outcome) || action.kind;
@@ -2965,7 +3078,7 @@ function executeSceneActionCommand(event, stateBundle, actorResult, action, opti
     return {
       reply: [
         spotlightControl?.focusLine,
-        formatTurnReply(result, { deltaSummary, sceneBeat, optionCue, spotlightCue })
+        formatTurnReply(result, { deltaSummary, combatOrderLine, sceneBeat, optionCue, spotlightCue })
       ].filter(Boolean).join("\n"),
       operationEvents: [
         ...(spotlightControl?.operationEvents || []),
@@ -3211,6 +3324,7 @@ function formatTurnReply(result, extras = {}) {
   const checkResultLine = formatCheckResultLine(result.event);
   if (checkResultLine) parts.push(checkResultLine);
   if (extras.deltaSummary) parts.push(extras.deltaSummary);
+  if (extras.combatOrderLine) parts.push(extras.combatOrderLine);
   if (extras.sceneBeat) parts.push(extras.sceneBeat);
   if (result.event?.outcome?.nextPrompt) parts.push(result.event.outcome.nextPrompt);
   if (extras.optionCue) parts.push(extras.optionCue);
